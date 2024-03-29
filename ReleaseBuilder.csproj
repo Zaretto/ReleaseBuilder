@@ -7,8 +7,4 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Rtools.Core\Rtools.Core.csproj" />
-  </ItemGroup>
-
 </Project>

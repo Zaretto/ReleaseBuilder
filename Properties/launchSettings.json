@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ReleaseBuilder": {
+      "commandName": "Project",
+      "commandLineArgs": "--root I:\\dev\\brightserve\\MSOS\\MSOS.UWP.AppPackages --target test -v"
+    }
+  }
+}

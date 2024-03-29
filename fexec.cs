@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace rjtool
 {
-    internal class fexec
+    public class fexec
     {
 		public static string executeCommand(string programFilePath, string commandLineArgs, string workingDirectory, bool wait)
 		{
