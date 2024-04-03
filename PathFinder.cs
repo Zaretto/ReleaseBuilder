@@ -17,8 +17,12 @@ namespace ReleaseBuilder
         /// </param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public static string FindDirectory(string toFind, List<String>[] paths)
+        public static string? FindDirectory(string? toFind, List<String>[] paths)
         {
+            if (toFind == null)
+            {
+                return null;
+            }
             foreach (var path in paths)
             {
                 var dir = "";

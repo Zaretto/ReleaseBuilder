@@ -9,13 +9,24 @@ namespace ReleaseBuilder
 {
     public class OptionsParser
     {
-        private readonly List<string> _args;
+        private List<string> _args;
+
 
         public OptionsParser(string[] args)
         {
             _args = args.ToList();
         }
-        public DirectoryInfo? GetDirectoryArgument(string key, char shortKey)
+
+        public bool IsInvalid()
+        {
+            if (_args.Any()) {
+                RLog.ErrorFormat("Unrecognised options {0}", string.Join(" ", _args));
+                return true;
+            }
+            return false;
+        }
+
+public DirectoryInfo? GetDirectoryArgument(string key, char shortKey)
         {
             var v = GetStringArgument(key, shortKey);
             if (v != null)
@@ -42,25 +53,29 @@ namespace ReleaseBuilder
         public string? GetStringArgument(string key, char shortKey)
         {
             var index = _args.IndexOf("--" + key);
-
+            if (index < 0)
+                index = _args.IndexOf("-" + shortKey);
             if (index >= 0 && _args.Count > index)
             {
-                return _args[index + 1];
+                var rv = _args[index + 1];
+                _args.RemoveAt(index);
+                _args.RemoveAt(index);
+                return rv;
             }
-
-            index = _args.IndexOf("-" + shortKey);
-
-            if (index >= 0 && _args.Count > index)
-            {
-                return _args[index + 1];
-            }
-
             return null;
         }
 
         public bool GetSwitchArgument(string key,  char shortKey)
         {
-            return _args.Contains("--" + key) || _args.Contains("-" + shortKey);
+            var index = _args.IndexOf("--" + key);
+            if (index < 0)
+                index = _args.IndexOf("-" + shortKey);
+            if (index >= 0)
+            {
+                _args.RemoveAt(index);
+                return true;
+            }
+            return false;
         }
     }
 }

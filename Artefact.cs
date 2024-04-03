@@ -7,14 +7,15 @@ using System.Threading.Tasks;
 
 namespace ReleaseBuilder
 {
-    public enum ArtefactType
-    {
-        File, 
-        Path,
-        Match,
-    }
+
     public class Artefact
     {
+        public enum ArtefactType
+        {
+            File,
+            Path,
+            Match,
+        }
         public string PathName;
         public DirectoryInfo? directoryInfo;
         public FileInfo? fileInfo;
@@ -39,17 +40,35 @@ namespace ReleaseBuilder
             Type = ArtefactType.Match;
         }
 
-        internal IEnumerable<string> GetFiles(string root)
+        internal IEnumerable<FileDetails> GetFiles()
         {
             if (Type == ArtefactType.Match)
             {
-                return Directory.GetFiles(Path.GetDirectoryName(PathName), Path.GetFileName(PathName));
+                var root = Path.GetDirectoryName(PathName);
+                Directory.GetFiles(root, Path.GetFileName(PathName)).Select(xx => new FileDetails(root, xx)).ToList();
             }
             if (directoryInfo != null)
-                return Directory.GetFiles(directoryInfo.FullName, "*.*", SearchOption.AllDirectories);
-            return new[] { PathName };
+            {
+                var root = Path.GetDirectoryName(PathName);
+                return Directory.GetFiles(root, "*.*", SearchOption.AllDirectories).Select(xx => new FileDetails(root, xx)).ToList();
+            }
+            return new[] { new FileDetails(Path.GetDirectoryName(PathName), PathName) };
         }
-        public override string ToString()
+        public override bool Equals(object obj)
+        {
+            var aobj = obj as Artefact;
+            if (aobj != null)
+                return aobj.GetHashCode() == GetHashCode();
+            return false;
+        }
+        public override int GetHashCode()
+        {
+            if (PathName != null)
+                return PathName.GetHashCode();
+            return 0;
+        }
+    
+    public override string ToString()
         {
             var sb = new StringBuilder();
             sb.Append(Type);

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ReleaseBuilder;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -26,7 +27,7 @@ namespace rjtool
 			StreamReader sOut = myProcess.StandardOutput;
 			StreamReader sErr = myProcess.StandardError;
 			var rv = new StringBuilder();
-
+			RLog.TraceFormat("exec {0} {1}", programFilePath, commandLineArgs);
 			try
 			{
 				string str;
@@ -52,6 +53,12 @@ namespace rjtool
 						sErr.BaseStream.Flush();
 					}
 					myProcess.WaitForExit();
+
+					if (myProcess.ExitCode != 0)
+					{
+						RLog.ErrorFormat(rv.ToString());
+						throw new Exception("Command {0} failed " + Path.GetFileName(programFilePath));
+					}
 				}
 			}
 			finally
