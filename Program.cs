@@ -10,13 +10,20 @@ namespace ReleaseBuilder
 
             var options = new OptionsParser(args);
             var root = options.GetDirectoryArgument("root", 'r');
-            var toolsdir = options.GetDirectoryArgument("toolsdir", 'p');
             var xmlConfig = options.GetFileArgument("config", 'c');
             var target = options.GetStringArgument("target", 't');
             var verbose = options.GetSwitchArgument("verbose", 'v');
             var extraVerbose = options.GetSwitchArgument("verbose", 'v');
             var nobuild = options.GetSwitchArgument("nobuild", 'n');
-
+            var toolPaths = new List<DirectoryInfo>();
+            while (true)
+            {
+                var path = options.GetDirectoryArgument("toolsdir", 'p');
+                if (path != null)
+                    toolPaths.Add(path);
+                else
+                    break;
+            }
             if (verbose)
             {
                 RLog.Level = LogMessageLevel.Trace;
@@ -24,8 +31,8 @@ namespace ReleaseBuilder
                     RLog.Level = LogMessageLevel.Debug;
                 if (root != null)
                     RLog.DebugFormat("root {0}", root);
-                if (toolsdir != null)
-                    RLog.DebugFormat("toolsdir {0}", toolsdir);
+                if (toolPaths.Any())
+                    RLog.DebugFormat("toolsdir {0}", string.Join(",", toolPaths.Select(xx=>xx.FullName)));
                 if (xmlConfig != null)
                     RLog.DebugFormat("xmlConfig {0}", xmlConfig);
                 if (target != null)
@@ -37,7 +44,7 @@ namespace ReleaseBuilder
                 return -1;
             try
             {
-                var rb = new ReleaseBuilder(root, xmlConfig, target, toolsdir, nobuild);
+                var rb = new ReleaseBuilder(root, xmlConfig, target, toolPaths, nobuild);
                 return rb.Process();
             }
             catch (Exception ex)

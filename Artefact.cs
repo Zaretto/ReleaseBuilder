@@ -49,8 +49,7 @@ namespace ReleaseBuilder
             }
             if (directoryInfo != null)
             {
-                var root = Path.GetDirectoryName(PathName);
-                return Directory.GetFiles(root, "*.*", SearchOption.AllDirectories).Select(xx => new FileDetails(root, xx)).ToList();
+                return Directory.GetFiles(directoryInfo.FullName, "*.*", SearchOption.AllDirectories).Select(xx => new FileDetails(directoryInfo.FullName, xx)).ToList();
             }
             return new[] { new FileDetails(Path.GetDirectoryName(PathName), PathName) };
         }

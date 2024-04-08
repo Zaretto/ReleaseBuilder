@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ReleaseBuilder;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -38,21 +39,32 @@ namespace rjtool
 		public string CommitsSinceVersionSourcePadded { get; set; }
 		public string CommitDate { get; set; }
 
-		public static GitVersion? ForDirectory(string srcdir)
+        public static string? GetJsonForDirectory(string srcdir)
         {
-			var gst = fexec.executeCommand("gitversion.exe", "", srcdir, true);
+            var gst = fexec.executeCommand("gitversion.exe", "", srcdir, true, false, null);
 			if (!string.IsNullOrEmpty(gst))
 			{
-				try
-				{
-                    return gst.FromJson<GitVersion>();
-				}
-				catch(Exception ex)
-                {
-					return null;
-                }
+				return gst;
 			}
-			throw new InvalidOperationException("No version available fexec failed");
-		}
-	}
+			return null;
+        }
+        public static GitVersion? FromJson(string? gst)
+		{
+            try
+            {
+                if (gst != null)
+                    return gst.FromJson<GitVersion>();
+            }
+            catch (Exception ex)
+            {
+                RLog.ErrorFormat("Failed to get version {0}", ex.Message);
+                throw new InvalidOperationException("Failed to get git version: " + ex.Message);
+            }
+			return null;
+        }
+        public static GitVersion? ForDirectory(string srcdir)
+        {
+			return FromJson(GetJsonForDirectory(srcdir));
+        }
+    }
 }

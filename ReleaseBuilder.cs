@@ -12,7 +12,7 @@ namespace ReleaseBuilder
 {
     public class ReleaseBuilder
     {
-        public DirectoryInfo ToolsDirectory;
+        public List<DirectoryInfo> ToolsDirectories;
         public List<Artefact> Artefacts = new List<Artefact>();
         public string PublishType = "live";
         public string Root;
@@ -21,28 +21,36 @@ namespace ReleaseBuilder
         public Dictionary<string, PublishTarget> Targets { get; private set; } = new Dictionary<string, PublishTarget>();
         public string TargetName { get; private set; }
 
-        public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, DirectoryInfo? toolsdir, bool nobuild)
+        public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild)
         {
+            ToolsDirectories = new List<DirectoryInfo>();
             if (toolsdir != null)
-            {
-                ToolsDirectory = toolsdir;
-            }
-            else if (Directory.Exists(AppDomain.CurrentDomain.BaseDirectory))
-                ToolsDirectory = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
-            if (ToolsDirectory != null)
-                RLog.TraceFormat("Tools directory {0}", ToolsDirectory.FullName);
+                ToolsDirectories.AddRange(toolsdir);
 
+            if (Directory.Exists(AppDomain.CurrentDomain.BaseDirectory))
+                ToolsDirectories.Add(new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory));
+            if (ToolsDirectories.Any())
+                RLog.TraceFormat("Tools directories {0}", string.Join(",", ToolsDirectories.Select(xx=>xx.FullName)));
             if (root != null)
                 Root = root.FullName;
             else
                 Root = Directory.GetCurrentDirectory();
 
+            fexec.AddExePath(ToolsDirectories);
+
             var baseConfig = "ReleaseConfig.Xml";
             var cpath = baseConfig;
+
+            /// 1. if file specified on the command line then use this.
+            /// 2. if config file found in root then use this
+            /// 3. otherwise use config from current directory.
+            /// 
             if (configFile != null)
                 cpath = configFile.FullName;
-            if (!File.Exists(cpath))
+            else
                 cpath = Path.Combine(Root, baseConfig);
+            if (!File.Exists(cpath))
+                cpath = baseConfig;
 
             if (File.Exists(cpath))
             {
@@ -196,7 +204,7 @@ namespace ReleaseBuilder
                 {
                     case "clean":
                         {
-                            var cleanFolder = GetAttribute(actionNode, "folder" ,"");
+                            var cleanFolder = GetAttribute(actionNode, "folder", "");
 
                             if (CheckParamNotEmpty(cleanFolder, "Folder to clean required"))
                             {
@@ -217,10 +225,37 @@ namespace ReleaseBuilder
                             }
                             break;
                         }
+                    case "create":
+                        {
+                            var file = expand_vars(GetAttribute(actionNode, "file"));
+                            var filePath = PathFinder.FindFile(file, new[] {
+                                        new List<string>(new []{path}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+                            if (filePath != null)
+                                file = filePath;
+                            else
+                            {
+                                var fileFolder = PathFinder.FindDirectory(Path.GetDirectoryName(file), new[] {
+                                        new List<string>(new []{path}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+                                if (fileFolder != null)
+                                    file = Path.Join(fileFolder, Path.GetFileName(file));
+                                else
+                                    throw new Exception("Could not create " + file + " as path not found");
+                            }
+                            var text = actionNode.Value;
+                            text = expand_vars(text).ReplaceLineEndings("\n");
+                            File.WriteAllText(file, text);
+                            break;
+                        }
                     case "copy":
                         {
                             var from = GetAttribute(actionNode, "from");
-                            
+
                             // if from points to a file then just copy that.
                             var fromPath = PathFinder.FindFile(expand_vars(from), new[] {
                                         new List<string>(new []{path}),
@@ -228,8 +263,8 @@ namespace ReleaseBuilder
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                      });
 
-                            if (fromPath == null) 
-                            fromPath = PathFinder.FindDirectory(expand_vars(from), new[] {
+                            if (fromPath == null)
+                                fromPath = PathFinder.FindDirectory(expand_vars(from), new[] {
                                         new List<string>(new []{path}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
@@ -250,7 +285,7 @@ namespace ReleaseBuilder
                                 RLog.TraceFormat("Copy from {0} to {1}", fromPath, toPath);
                                 IEnumerable<string> copyList = null;
                                 if (File.Exists(fromPath))
-                                    copyList= new[] { fromPath };
+                                    copyList = new[] { fromPath };
                                 else
                                     copyList = Directory.EnumerateFiles(fromPath!, match);
 
@@ -264,34 +299,67 @@ namespace ReleaseBuilder
                                     RLog.TraceFormat("copied {0}", destFile);
                                 }
                                 else foreach (var file in copyList)
-                                {
-                                    var destFile = Path.Combine(toPath, Path.GetFileName(file));
-                                    File.Copy(file, destFile, true);
-                                    RLog.TraceFormat("copied {0}", destFile);
-                                }
+                                    {
+                                        var destFile = Path.Combine(toPath, Path.GetFileName(file));
+                                        File.Copy(file, destFile, true);
+                                        RLog.TraceFormat("copied {0}", destFile);
+                                    }
                             }
                         }
                         break;
                     case "exec":
-                        var app = GetAttribute(actionNode, "app");
-                        var folder = GetAttribute(actionNode, "folder", "");
-                        if (string.IsNullOrEmpty(folder))
-                            folder = path;
-                        var args = GetAttribute(actionNode, "args");
-                        var appFile = FindTool(app);
-                        if (appFile == null)
-                            RLog.ErrorFormat("Cannot locate {0}", app);
-                        else
                         {
-                            var msg = fexec.executeCommand(appFile, expand_vars(args), folder, true);
-                            RLog.TraceFormat(msg);
+                            var app = GetAttribute(actionNode, "app");
+                            var folder = GetAttribute(actionNode, "folder", "");
+                            if (string.IsNullOrEmpty(folder))
+                                folder = path;
+                            else
+                                folder = PathFinder.FindDirectory(expand_vars(folder), new[] {
+                                        new List<string>(new []{path}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+                            var args = GetAttribute(actionNode, "args", "");
+                            var logStdout = GetAttribute<bool>(actionNode, "log-stdout");
+
+                            var requiredExitCodes = GetAttributeAsArray(actionNode, "required-exit-codes",  (av) => av.Split(',').Select(xx => int.Parse(xx)));
+                            if (requiredExitCodes == null)
+                                requiredExitCodes = new[] { 0 };
+
+                            var appFile = FindTool(app);
+                            if (appFile == null)
+                                appFile = fexec.FindExePath(app);
+                            if (appFile == null)
+                                RLog.ErrorFormat("Cannot locate {0}", app);
+                            else
+                            {
+                                var msg = fexec.executeCommand(appFile, expand_vars(args), folder, true, logStdout, requiredExitCodes);
+                                RLog.TraceFormat(msg);
+                            }
+                            break;
                         }
-                        break;
                     default:
                         RLog.ErrorFormat("Unkown artefact tag {0}", action);
                         break;
                 }
             }
+        }
+
+        private T? GetAttributeAsArray<T>(XElement actionNode, string v, Func<string, T> func)
+        {
+            var av = GetAttribute(actionNode, v, "");
+            if (av != "")
+                return func(av);
+            return default(T);
+        }
+
+        private T GetAttribute<T>(XElement node, string v)
+        {
+            var val = GetAttribute(node, v, "");
+            if (val != "")
+                return (T)Convert.ChangeType(val, typeof(T));
+            else
+                return default(T);
         }
 
         public static bool IsParameterInvalid(string error, string value, Func<string, bool> invalid)
@@ -315,14 +383,16 @@ namespace ReleaseBuilder
         private string? FindTool(string? app)
         {
             var file = app;
-            if (!Path.HasExtension(file))
-                file += ".exe";
-            return PathFinder.FindFile(file, 
+            var rv = PathFinder.FindFile(file, 
                                             new[] {
                                         new List<string>(new []{Root}),
-                                        new List<string>(new []{ToolsDirectory.FullName}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                             });
+            if (rv == null)
+            {
+                rv = PathFinder.FindFile(file, ToolsDirectories.Select(xx => new List<string>(new[] { xx.FullName })).ToArray());
+            }
+            return rv;                       
         }
 
         private string? AddFolder(string? directory)
@@ -453,9 +523,11 @@ namespace ReleaseBuilder
 
         void GetVersion()
         {
-            var Info = GitVersion.ForDirectory(Root);
+            var json = GitVersion.GetJsonForDirectory(Root);
+            var Info = GitVersion.FromJson(json);
             if (Info != null)
             {
+                addvar("GITVERSION.JSON", json);
                 addvar("VERSION", Info.NuGetVersionV2);
                 addvar("SemVer", Info.NuGetVersionV2);
                 addvar("Major", Info.Major);
@@ -483,6 +555,9 @@ namespace ReleaseBuilder
         }
         public string expand_vars(string rv)
         {
+            if (rv == null)
+                return "";
+
             if (rv.StartsWith("$"))
                 rv = Environment.GetEnvironmentVariable(rv.Substring(1));
             else foreach (var var in vars)
