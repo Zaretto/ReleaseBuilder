@@ -5,14 +5,29 @@
         /// <summary>
         /// where the file was found
         /// </summary>
-        private string Path { get; }
+        private string FilePath { get; }
         /// <summary>
         /// full path to the file.
         /// </summary>
         public string Name { get; }
+
+        public string NewFileName { get; }
+        public FileDetails(int skipCount, string path, string name, string newName)
+        {
+            if (skipCount > 0)
+            {
+                var n1 = name.Replace(path, "").TrimStart('\\');
+                var parts = Path.GetDirectoryName(n1).Replace('/', '\\').Split('\\').Take(skipCount);
+                FilePath = Path.Combine(path, string.Join("\\", parts));
+            }
+            else
+                FilePath = path;
+            Name = name;
+            NewFileName = newName;  
+        }
         public FileDetails(string path, string name)
         {
-            Path = path;   
+            FilePath = path;
             Name = name;
         }
         public override bool Equals(object obj)
@@ -24,14 +39,17 @@
         }
         public override int GetHashCode()
         {
-            if (Path != null && Name != null)
-                return (Path+Name).GetHashCode();
+            if (FilePath != null && Name != null)
+                return (FilePath+Name).GetHashCode();
             return 0;
         }
 
         internal string GetArchiveName()
         {
-            return Name.Replace(Path, "").Trim("\\/".ToArray());
+            if (!string.IsNullOrEmpty(NewFileName))
+                return NewFileName;
+            else
+                return Name.Replace(FilePath, "").Trim("\\/".ToArray());
         }
     }
 }

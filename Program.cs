@@ -14,8 +14,20 @@ namespace ReleaseBuilder
             var target = options.GetStringArgument("target", 't');
             var verbose = options.GetSwitchArgument("verbose", 'v');
             var extraVerbose = options.GetSwitchArgument("verbose", 'v');
+            var showHelp = options.GetSwitchArgument("help", 'h');
             var nobuild = options.GetSwitchArgument("nobuild", 'n');
             var toolPaths = new List<DirectoryInfo>();
+            if (showHelp)
+            {
+                RLog.InfoFormat("ReleaseBuilder ");
+                RLog.InfoFormat(" --(n)obuild       Do not build ateracts");
+                RLog.InfoFormat(" --(c)onfig        ReleaseConfig.xml file");
+                RLog.InfoFormat(" --(r)oot          Root folder");
+                RLog.InfoFormat(" --(p) --toolsdir  Add path to search for exec");
+                RLog.InfoFormat(" --(t)arget        Target to build");
+                RLog.InfoFormat(" --(v)erbpse       Increase verbosity. Can be used twice.");
+                return 0;
+            }
             while (true)
             {
                 var path = options.GetDirectoryArgument("toolsdir", 'p');

@@ -16,15 +16,21 @@ namespace ReleaseBuilder
             Path,
             Match,
         }
+
+        public int DirectoryRemoveCount { get; }
+        public string Root { get; }
+        public string NewName { get; }
+
         public string PathName;
         public DirectoryInfo? directoryInfo;
         public FileInfo? fileInfo;
 
         public ArtefactType Type;
-        public Artefact(FileInfo file)
+        public Artefact(FileInfo file, string newName)
         {
             fileInfo = file;
             PathName = file.FullName;
+            NewName = newName;
             Type = ArtefactType.File;
         }
         public Artefact(DirectoryInfo dir)
@@ -34,24 +40,27 @@ namespace ReleaseBuilder
             Type = ArtefactType.Path;
         }
 
-        public Artefact(string match)
+        public Artefact(int directoryRemoveCount, string root, string match)
         {
+            DirectoryRemoveCount = directoryRemoveCount;
+            Root = root;
             PathName = match.Replace("/", "\\");
             Type = ArtefactType.Match;
+            DirectoryRemoveCount = directoryRemoveCount;
         }
 
         internal IEnumerable<FileDetails> GetFiles()
         {
             if (Type == ArtefactType.Match)
             {
-                var root = Path.GetDirectoryName(PathName);
-                Directory.GetFiles(root, Path.GetFileName(PathName)).Select(xx => new FileDetails(root, xx)).ToList();
+                var pathRoot = Path.GetDirectoryName(PathName);
+                return Directory.GetFiles(pathRoot, Path.GetFileName(PathName)).Select(xx => new FileDetails(DirectoryRemoveCount, Root, xx, NewName)).ToList();
             }
             if (directoryInfo != null)
             {
                 return Directory.GetFiles(directoryInfo.FullName, "*.*", SearchOption.AllDirectories).Select(xx => new FileDetails(directoryInfo.FullName, xx)).ToList();
             }
-            return new[] { new FileDetails(Path.GetDirectoryName(PathName), PathName) };
+            return new[] { new FileDetails(0, Path.GetDirectoryName(PathName), PathName, NewName) };
         }
         public override bool Equals(object obj)
         {

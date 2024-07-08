@@ -1,0 +1,114 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<xs:schema id="NewDataSet" xmlns="" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+  <xs:element name="ReleaseConfig">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Name" type="xs:string" minOccurs="0" />
+        <xs:element name="Folder" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="name" type="xs:string" />
+            <xs:attribute name="name-version" type="xs:string" />
+            <xs:attribute name="path" type="xs:string" />
+            <xs:attribute name="version" type="xs:string" />
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Target" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="Set" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:attribute name="name" type="xs:string" />
+                  <xs:attribute name="value" type="xs:string" />
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+            <xs:attribute name="name" type="xs:string" />
+            <xs:attribute name="path" type="xs:string" />
+            <xs:attribute name="archive-version" type="xs:string" />
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Artefacts" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:choice maxOccurs="unbounded">
+              <xs:element name="folder" type="xs:string" minOccurs="0" msdata:Ordinal="1" />
+              <xs:element name="build" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:choice maxOccurs="unbounded">
+                    <xs:element name="clean" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="folder" type="xs:string" />
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="copy" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element name="transform-content" minOccurs="0" maxOccurs="unbounded">
+                            <xs:complexType>
+                              <xs:attribute name="transform" type="xs:string" />
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="from" type="xs:string" />
+                        <xs:attribute name="to" type="xs:string" />
+                        <xs:attribute name="match" type="xs:string" />
+                        <xs:attribute name="name" type="xs:string" />
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="exec" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:attribute name="app" type="xs:string" />
+                        <xs:attribute name="args" type="xs:string" />
+                        <xs:attribute name="folder" type="xs:string" />
+                        <xs:attribute name="log-stdout" type="xs:string" />
+                      </xs:complexType>
+                    </xs:element>
+                    <xs:element name="create" nillable="true" minOccurs="0" maxOccurs="unbounded">
+                      <xs:complexType>
+                        <xs:simpleContent msdata:ColumnName="create_Text" msdata:Ordinal="1">
+                          <xs:extension base="xs:string">
+                            <xs:attribute name="file" type="xs:string" />
+                          </xs:extension>
+                        </xs:simpleContent>
+                      </xs:complexType>
+                    </xs:element>
+                    </xs:choice>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+              <xs:element name="file" nillable="true" minOccurs="0" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:simpleContent msdata:ColumnName="file_Text" msdata:Ordinal="4">
+                    <xs:extension base="xs:string">
+                      <xs:attribute name="folder" type="xs:string" />
+                      <xs:attribute name="newname" type="xs:string" />
+                      <xs:attribute name="skip-directories-front" type="xs:string" />
+                      <xs:attribute name="name" type="xs:string" />
+                    </xs:extension>
+                  </xs:simpleContent>
+                </xs:complexType>
+              </xs:element>
+              </xs:choice>
+            </xs:sequence>
+            <xs:attribute name="folder" type="xs:string" />
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Artefact" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="folder" type="xs:string" />
+            <xs:attribute name="directory" type="xs:string" />
+            <xs:attribute name="file" type="xs:string" />
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="NewDataSet" msdata:IsDataSet="true" msdata:UseCurrentLocale="true">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="ReleaseConfig" />
+      </xs:choice>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

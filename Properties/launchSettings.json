@@ -2,8 +2,8 @@
   "profiles": {
     "ReleaseBuilder": {
       "commandName": "Project",
-      "commandLineArgs": "--target test -v ",
-      "workingDirectory": "i:\\dev\\brightserve\\MSOS\\MSOS.API\\release-scripts "
+      "commandLineArgs": "--target test -v  --toolsdir i:\\apps\\nodejs --toolsdir  c:\\users\\richard\\AppData\\Roaming\\npm --toolsdir I:\\dev\\brightserve\\MSOS\\release-tools ",
+      "workingDirectory": "I:\\dev\\brightserve\\MSOS\\MSOS.UWP.AppPackages"
     }
   }
 }
