@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection.Metadata.Ecma335;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -324,12 +325,21 @@ namespace ReleaseBuilder
                             var transform = GetAttribute(actionNode, "transform", "");
                             var transformContents = actionNode.Elements("transform-content");
                             var match = GetAttribute(actionNode, "match", "*.*")!;
-                            var to = GetAttribute(actionNode, "to", path);
-                            var toPath = PathFinder.FindDirectory(expand_vars(to), new[] {
-                                        new List<string>(new []{path}),
-                                        new List<string>(new []{Root}),
-                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
-                                    });
+                            var toPath = expand_vars(GetAttribute(actionNode, "to", ""));
+                            if (!string.IsNullOrEmpty(toPath))
+                            {
+                                toPath = Path.Combine(path, toPath);
+                                if (!Directory.Exists(toPath))
+                                {
+                                    var newDir = Directory.CreateDirectory(toPath);
+                                    if (newDir == null)
+                                    {
+                                        throw new Exception(string.Format("Failed to create {0} in {1}", toPath, path));
+                                    }
+                                }
+                            }
+                            else
+                                toPath = path;
 
                             if (CheckParamNotEmpty(fromPath, "from must point to a valid file or directory")
                                 && CheckParamNotEmpty(match, "match must not be empty")
