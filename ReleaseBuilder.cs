@@ -1,7 +1,10 @@
-﻿using rjtool;
+﻿using Microsoft.VisualBasic;
+using rjtool;
 using System;
+using System.ComponentModel;
 using System.ComponentModel.Design;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection.Metadata.Ecma335;
@@ -24,6 +27,7 @@ namespace ReleaseBuilder
 
         public Dictionary<string, PublishTarget> Targets { get; private set; } = new Dictionary<string, PublishTarget>();
         public string TargetName { get; private set; }
+        public bool NoBuild { get; }
 
         public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild)
         {
@@ -39,6 +43,8 @@ namespace ReleaseBuilder
                 Root = root.FullName;
             else
                 Root = Directory.GetCurrentDirectory();
+
+            NoBuild = nobuild;
 
             fexec.AddExePath(ToolsDirectories);
 
@@ -96,7 +102,7 @@ namespace ReleaseBuilder
                     var name = node.Attribute("name");
                     if (name == null)
                     {
-                        RLog.ErrorFormat("Target Name missing");
+                        LogForNodeWithDetails(LogMessageLevel.Error, node, "Target Name missing");
                         continue;
                     }
                     Targets[name.Value] = new PublishTarget(name.Value, expand_vars(node.Attribute("path")));
@@ -104,7 +110,7 @@ namespace ReleaseBuilder
                     if (!string.IsNullOrEmpty(av))
                     {
                         av = Transform(av, "");
-                        Targets[name.Value].Version = av;
+                        Targets[name.Value].Version = expand_vars(av);
                         addvar("TargetVersion", av);
                     }
                     if (name.Value.Equals(target, StringComparison.InvariantCultureIgnoreCase))
@@ -135,7 +141,7 @@ namespace ReleaseBuilder
                                 .Select(xx => new DirectoryInfo(xx));
                         if (matches == null || !matches.Any())
                         {
-                            RLog.ErrorFormat("{0} no folders matching {1}", name, path);
+                            LogForNodeWithDetails(LogMessageLevel.Error, node, "{0} no folders matching {1}", name, path);
                         }
                         else
                         {
@@ -161,11 +167,12 @@ namespace ReleaseBuilder
                             var value = ordered.First().FullName;
                             vars[name] = value;
                             var folderName = Path.GetFileName(value);
-                            if (!string.IsNullOrEmpty(versionName) && folderName.Count(xx=>xx=='.') > 1)
+                            if (!string.IsNullOrEmpty(versionName) && folderName.Count(xx => xx == '.') > 1)
                             {
                                 var rv = Regex.Match(folderName, @"\d+.+\d");
                                 if (rv != null)
                                     vars[versionName] = rv.Value;
+                                RLog.TraceFormat("{0} = {1}", versionName, rv.Value);
                             }
                         }
                     }
@@ -173,55 +180,58 @@ namespace ReleaseBuilder
                 if (node.Name == "Artefacts")
                 {
                     var artefactFolder = GetAttribute(node, "folder", "");
-                    if (!string.IsNullOrEmpty(artefactFolder))
+                    if (When(node))
                     {
-                        artefactFolder = expand_vars(artefactFolder);
-                        artefactFolder = PathFinder.FindDirectory(artefactFolder,
-                         new[] {
+                        if (!string.IsNullOrEmpty(artefactFolder))
+                        {
+                            artefactFolder = expand_vars(artefactFolder);
+                            artefactFolder = PathFinder.FindDirectory(artefactFolder,
+                             new[] {
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
-                         });
+                             });
 
-                    }
-                 
-                    foreach(XElement child in node.Elements())
-                    {
-                        switch(child.Name.ToString().ToLower())
+                        }
+
+                        foreach (XElement child in node.Elements())
                         {
-                            case "file":
-                                {
-                                    var file = expand_vars(child.Value);
-                                    var fileFolder = GetAttribute(child, "folder", "");
-                                    var newname = GetAttribute(child, "newname", "");
-                                    if (fileFolder != "")
+                            switch (child.Name.ToString().ToLower())
+                            {
+                                case "file":
                                     {
-                                        var nfolder = PathFinder.FindDirectory(expand_vars(fileFolder),
-                                             new[] {
+                                        var file = expand_vars(child.Value);
+                                        var fileFolder = GetAttribute(child, "folder", "");
+                                        var newname = GetAttribute(child, "newname", "");
+                                        if (fileFolder != "")
+                                        {
+                                            var nfolder = PathFinder.FindDirectory(expand_vars(fileFolder),
+                                                 new[] {
                                         new List<string>(new []{artefactFolder}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
-                                             });
-                                        if (CheckParamNotEmpty(fileFolder, "folder must point to a directory " + fileFolder))
-                                            file = Path.Combine(nfolder, file);
+                                                 });
+                                            if (CheckParamNotEmpty(fileFolder, "folder must point to a directory " + fileFolder))
+                                                file = Path.Combine(nfolder, file);
+                                        }
+                                        file = AddFile(GetAttribute<int>(child, "skip-directories-front"), Root, file, newname);
                                     }
-                                    file = AddFile(GetAttribute<int>(child, "skip-directories-front"), Root, file, newname);
-                                }
-                                break;
-                            case "folder":
-                                var folder = AddFolder(GetAttribute<int>(child, "skip-directories-front"), Root, expand_vars(child.Value));
-                                break;
-                            case "build":
-                                if (nobuild)
-                                    RLog.InfoFormat("Ignoring build step");
-                                else
-                                    processBuild(child, artefactFolder);
-                                break;
+                                    break;
+                                case "folder":
+                                    var folder = AddFolder(GetAttribute<int>(child, "skip-directories-front"), Root, expand_vars(child.Value));
+                                    break;
+                                case "build":
+                                    if (nobuild)
+                                        RLog.InfoFormat("Ignoring build step");
+                                    else
+                                        processBuild(child, artefactFolder);
+                                    break;
 
-                            default:
-                                RLog.ErrorFormat("Unknown artefact type {0}", child.Name);
-                                break;
+                                default:
+                                    LogForNodeWithDetails(LogMessageLevel.Error, child, "Unknown artefact type {0}", child.Name);
+                                    break;
+                            }
                         }
-                    }    
+                    }
                 }
                 if (node.Name == "Artefact")
                 {
@@ -238,6 +248,69 @@ namespace ReleaseBuilder
                         directory = AddFolder(GetAttribute<int>(node, "skip-directories-front"), artefactRoot, directory);
                     });
                 }
+                if (node.Name == "ReleaseBuilder")
+                {
+                    releaseBuilder(node);
+                }
+            }
+        }
+
+        private bool When(XElement node)
+        {
+            var whenAttribute = GetAttribute(node, "active", "");
+            if (!string.IsNullOrEmpty(whenAttribute))
+            {
+                if (Transform(whenAttribute, "") == "")
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Trace, node, "Not processing node because of active attribute {0}",whenAttribute);
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private void releaseBuilder(XElement node)
+        {
+            var folderAttribute = expand_vars(GetAttribute(node, "folder", ""));
+            var fileAttribute = expand_vars(GetAttribute(node, "file", "ReleaseConfig.xml"));
+            var noBuildAttribute = GetAttribute(node, "nobuild", NoBuild);
+            var processAttribute = GetAttribute(node, "process", false);
+            var fromPath = PathFinder.FindDirectory(folderAttribute, new[] {
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()})
+                    });
+
+            var fromFile = PathFinder.FindFile(fileAttribute, new[] {
+                                        new List<string>(new []{fromPath}),
+                                        });
+            if (noBuildAttribute && !processAttribute)
+                LogForNodeWithDetails(LogMessageLevel.Error, node, "nobuild cannot be true if process is false as no actions will result");
+
+                if (CheckParamNotEmpty(fromPath, String.Format("ReleaseBuilder: folder is required and must point to a valid directory ({0})", folderAttribute))
+                && CheckParamNotEmpty(fileAttribute, String.Format("ReleaseBuilder: file is required and must point to a valid directory {0}", fileAttribute)))
+            {
+                RLog.InfoFormat("Build release from {0}", fromFile);
+                var currentFolder = Directory.GetCurrentDirectory();
+
+                try
+                {
+                    //                public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild)
+                    var newRoot = new DirectoryInfo(fromPath);
+                    Directory.SetCurrentDirectory(newRoot.FullName);
+                    var newConfigFile = new FileInfo(fromFile);
+                    var rb = new ReleaseBuilder(newRoot, newConfigFile, PublishType, ToolsDirectories, noBuildAttribute);
+                    if (processAttribute)
+                        rb.Process();
+                }
+                catch (Exception ex)
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Error, node, ex.Message);
+                }
+                finally
+                {
+                    Directory.SetCurrentDirectory(currentFolder);
+                }
+                RLog.InfoFormat("Finished building {0}", fromFile);
             }
         }
 
@@ -249,6 +322,8 @@ namespace ReleaseBuilder
 
         private void processBuild(XElement artefactsNode, string path)
         {
+            var newPathAttribute = GetAttribute(artefactsNode, "folder", "");
+
             foreach (XElement actionNode in artefactsNode.Elements())
             {
                 var action = actionNode.Name.ToString().ToLower();
@@ -257,21 +332,38 @@ namespace ReleaseBuilder
                     case "clean":
                         {
                             var cleanFolder = GetAttribute(actionNode, "folder", "");
-
+                            var cleanFolders = GetAttribute(actionNode, "include-folders", false);
+                            var cleanPattern = GetAttribute(actionNode, "match", "*.*");
                             if (CheckParamNotEmpty(cleanFolder, "Folder to clean required"))
                             {
                                 cleanFolder = PathFinder.FindDirectory(expand_vars(cleanFolder), new[] {
-                                        new List<string>(new []{path}),
+                                        new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                     });
                                 if (CheckParamNotEmpty(cleanFolder, "folder to clean must be found"))
                                 {
                                     RLog.InfoFormat("Cleaning folder {0}", cleanFolder);
-                                    foreach (var toDel in Directory.EnumerateFiles(cleanFolder, "*.*", SearchOption.AllDirectories))
+                                    foreach (var toDel in Directory.EnumerateFiles(cleanFolder, cleanPattern, SearchOption.AllDirectories))
                                     {
                                         RLog.TraceFormat("del {0}", toDel);
                                         File.Delete(toDel);
+                                    }
+                                    if (cleanFolders)
+                                    {
+                                        foreach (var toDelFolder in Directory.EnumerateDirectories(cleanFolder, cleanPattern, SearchOption.AllDirectories))
+                                    {
+                                            try
+                                            {
+                                                Directory.Delete(toDelFolder, true);
+                                                RLog.TraceFormat("del {0}", toDelFolder);
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "Could not delete folder {0}", toDelFolder);
+                                            }
+                                        }
+
                                     }
                                 }
                             }
@@ -281,7 +373,7 @@ namespace ReleaseBuilder
                         {
                             var file = expand_vars(GetAttribute<string>(actionNode, "file"));
                             var filePath = PathFinder.FindFile(file, new[] {
-                                        new List<string>(new []{path}),
+                                        new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                      });
@@ -307,20 +399,31 @@ namespace ReleaseBuilder
                     case "copy":
                         {
                             var from = GetAttribute<string>(actionNode, "from");
+                            var recursive = GetAttribute(actionNode, "recursive", false);
+                            var searchOption = SearchOption.TopDirectoryOnly;
 
                             // if from points to a file then just copy that.
                             var fromPath = PathFinder.FindFile(expand_vars(from), new[] {
-                                        new List<string>(new []{path}),
+                                        new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                      });
 
                             if (fromPath == null)
                                 fromPath = PathFinder.FindDirectory(expand_vars(from), new[] {
-                                        new List<string>(new []{path}),
+                                        new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                      });
+                            if (recursive)
+                            {
+                                if (fromPath != null && !Directory.Exists(fromPath))
+                                {
+                                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "{0} must be a directory when using recursive mode", fromPath);
+                                    return;
+                                }
+                                searchOption = SearchOption.AllDirectories;
+                            }
                             var newName = GetAttribute(actionNode, "name", "");
                             var transform = GetAttribute(actionNode, "transform", "");
                             var transformContents = actionNode.Elements("transform-content");
@@ -350,8 +453,23 @@ namespace ReleaseBuilder
                                 if (File.Exists(fromPath))
                                     copyList = new[] { fromPath };
                                 else
-                                    copyList = Directory.EnumerateFiles(fromPath!, match);
-
+                                {
+                                    copyList = Directory.EnumerateFiles(fromPath!, match, searchOption).ToList();
+                                    if (recursive)
+                                    {
+                                        var folders = copyList.Select(xx => Path.GetDirectoryName(xx)).Distinct().ToList();
+                                        foreach (var folder in folders)
+                                        {
+                                            var srcFolder = folder.Substring(fromPath.Length).Trim("/\\".ToArray());
+                                            var destFolder = Path.Combine(toPath, srcFolder);
+                                            if (!Directory.Exists(destFolder))
+                                            {
+                                                RLog.TraceFormat("Creating folder {0}", destFolder);
+                                                Directory.CreateDirectory(destFolder);
+                                            }
+                                        }
+                                    }
+                                }
                                 if (newName != "")
                                 {
                                     newName = expand_vars(newName);
@@ -366,13 +484,43 @@ namespace ReleaseBuilder
                                 else foreach (var file in copyList)
                                     {
                                         var destFile = Transform(transform, Path.GetFileName(file));
-                                        destFile = Path.Combine(toPath, destFile);
+                                        if (recursive)
+                                        {
+                                            var srcFolder = Path.GetDirectoryName(file.Substring(fromPath.Length).Trim("/\\".ToArray()));
+                                            destFile = Path.Combine(toPath, srcFolder, destFile);
+                                        }
+                                        else
+                                            destFile = Path.Combine(toPath, destFile);
                                         copyFile(file, destFile, transformContents);
                                         RLog.TraceFormat("copied {0}", destFile);
                                     }
                             }
                         }
                         break;
+                    case "modify":
+                        {
+                            var from = expand_vars(GetAttribute<string>(actionNode, "file", ""));
+
+                            // if from points to a file then just copy that.
+                            var fromPath = PathFinder.FindFile(from, new[] {
+                                        new List<string>(new []{path,newPathAttribute}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+
+                            var transformContents = actionNode.Elements("transform-content");
+                            if (CheckParamNotEmpty(fromPath, "file must point to a valid file"))
+                            {
+                                if (EditFile(fromPath, transformContents))
+                                    RLog.TraceFormat("modified {0}", fromPath);
+                            }
+                        }
+                        break;
+                    case "release-builder":
+                        {
+                            releaseBuilder(actionNode);
+                            break;
+                        }
                     case "exec":
                         {
                             var app = GetAttribute<string>(actionNode, "app");
@@ -381,7 +529,7 @@ namespace ReleaseBuilder
                                 folder = path;
                             else
                                 folder = PathFinder.FindDirectory(expand_vars(folder), new[] {
-                                        new List<string>(new []{path}),
+                                        new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                      });
@@ -396,7 +544,7 @@ namespace ReleaseBuilder
                             if (appFile == null)
                                 appFile = fexec.FindExePath(app);
                             if (appFile == null)
-                                RLog.ErrorFormat("Cannot locate {0}", app);
+                                LogForNodeWithDetails(LogMessageLevel.Error,actionNode, "Cannot locate {0}", app);
                             else
                             {
                                 var msg = fexec.executeCommand(appFile, expand_vars(args), folder, true, logStdout, requiredExitCodes);
@@ -405,26 +553,35 @@ namespace ReleaseBuilder
                             break;
                         }
                     default:
-                        RLog.ErrorFormat("Unkown artefact tag {0}", action);
+                        LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "Unkown artefact tag {0}", action);
                         break;
                 }
             }
         }
-      
-        private void copyFile(string? fromPath, string destFile, IEnumerable<XElement> transforms)
+        private bool EditFile(string fromPath, IEnumerable<XElement> transforms)
         {
             if (transforms != null && transforms.Any())
             {
                 var contents = File.ReadAllText(fromPath);
+                var originalContents = new string(contents);
                 foreach (XElement transformNode in transforms)
                 {
                     var transform = transformNode.Attribute("transform");
                     contents = Transform(transform.Value, contents);
                 }
-                File.WriteAllText(destFile, contents);
+                if (originalContents != contents)
+                {
+                    File.WriteAllText(fromPath, contents);
+                    return true;
+                }
             }
-            else
-                File.Copy(fromPath, destFile, true);
+            return false;
+        }
+        private void copyFile(string? fromPath, string destFile, IEnumerable<XElement> transforms)
+        {
+            File.Copy(fromPath, destFile, true);
+            if (transforms != null && transforms.Any())
+                EditFile(destFile, transforms);
         }
 
         private T? GetAttributeAsArray<T>(XElement actionNode, string v, Func<string, T> func)
@@ -574,6 +731,14 @@ namespace ReleaseBuilder
                             var s2 = expand_vars(parts[2]);
                             return Regex.Replace(v, s1, s2);
                         }
+                    case "when":
+                        {
+                            argCheck(parts, 4, Transformation);
+                            var s1 = expand_vars(parts[1]);
+                            var cond = parts[2];
+                            var s2 = expand_vars(parts[3]);
+                            return compare(s1, cond, s2);
+                        }
                     //case "eval":
                     //    {
                     //        if (string.IsNullOrEmpty(v))
@@ -590,12 +755,52 @@ namespace ReleaseBuilder
             return Transformation;
         }
 
-        private void Error(XElement node, string v)
+        private string compare(string? s1, string cond, string? s2)
         {
-            
+            var result = false;
+            switch (cond.ToLower())
+            {
+                case "eq":
+                case "==":
+                case "=":
+                    result = s1 == s2;
+                    break;
+
+                case "ne":
+                case "!=":
+                case "<>":
+                    result = s1 != s2;
+                    break;
+                default:
+                    RLog.ErrorFormat("Unknow comparison {0}", cond);
+                    break;
+            }
+            if (result)
+                return "1";
+            return "";
+        }
+
+        private void LogForNodeWithDetails(LogMessageLevel level, XElement node, string message, params object[] args)
+        {
             IXmlLineInfo info = node;
             var sb = new StringBuilder();
-            sb.Append(v);
+            if (info.HasLineInfo())
+            {
+                sb.Append(" Line: ");
+                sb.Append(info.LineNumber);
+                sb.Append(": ");
+                sb.Append(info.LinePosition);
+                sb.Append(": ");
+            }
+            sb.Append(message);
+            RLog.Format(level, sb.ToString(), args);
+        }
+        private void ThrowErrorForNode(XElement node, string message)
+        {
+           
+            IXmlLineInfo info = node;
+            var sb = new StringBuilder();
+            sb.Append(message);
 
             if (info.HasLineInfo())
             {
@@ -623,7 +828,7 @@ namespace ReleaseBuilder
             if (rv == null)
             {
                 if (defaultValue == null)
-                    RLog.ErrorFormat("Cannot locate attribute {0}", v);
+                    LogForNodeWithDetails(LogMessageLevel.Error, node, "Cannot locate attribute {0}", v);
                 return defaultValue;
             }
             Type returnType = typeof(T);
@@ -638,17 +843,25 @@ namespace ReleaseBuilder
             {
                 addvar("GITVERSION.JSON", json);
                 addvar("VERSION", Info.NuGetVersionV2);
-                addvar("SemVer", Info.NuGetVersionV2);
-                addvar("AssemblySemVer", Info.AssemblySemVer);
-                addvar("Major", Info.Major);
-                addvar("Minor", Info.Minor);
-                addvar("Patch", Info.Patch);
-                addvar("PreReleaseTag", Info.PreReleaseTag);
+                var properties = from p in typeof(GitVersion).GetProperties()
+                                 where p.PropertyType == typeof(string) &&
+                                       p.CanRead &&
+                                       p.CanWrite
+                                 select p;
+                foreach (var property in properties)
+                {
+                    var val = property.GetValue(Info, null) as string;
+                    if (!string.IsNullOrEmpty(val))
+                        addvar(property.Name, val);
+                }
+
             }
         }
 
         private void addvar(string k, string v)
         {
+            if (string.IsNullOrEmpty(v))
+                RLog.ErrorFormat("{0} is null or empty", k);
             RLog.DebugFormat("{0}={1}", k, v);
             vars[k] = v;
         }
@@ -658,19 +871,19 @@ namespace ReleaseBuilder
             if (v.HasValue)
                 vars[k] = v.Value.ToString();
         }
-        public string expand_vars(XAttribute? att)
+        public string? expand_vars(XAttribute? att)
         {
             if (att == null)
                 return "";
             return expand_vars(att.Value);
         }
-        public string expand_vars(string rv)
+        public string? expand_vars(string rv)
         {
             if (rv == null)
                 return "";
 
             if (rv.StartsWith("$"))
-                rv = Environment.GetEnvironmentVariable(rv.Substring(1));
+                rv = Environment.GetEnvironmentVariable(rv.Substring(1))!;
             else foreach (var var in vars)
                 {
                     var rt = "~" + var.Key + "~";
@@ -688,6 +901,12 @@ namespace ReleaseBuilder
         {
             if (Targets.Any())
             {
+                var files = Artefacts.SelectMany(xx => xx.GetFiles()).Distinct();
+                if (!files.Any())
+                {
+                    RLog.InfoFormat("No artefacts - not building archive");
+                    return 0;
+                }
                 var target = Targets[PublishType];
                 var filename = new List<string>
                 {
@@ -703,7 +922,6 @@ namespace ReleaseBuilder
                     {
                         using (var archive = new ZipArchive(zipToOpen, ZipArchiveMode.Update))
                         {
-                            var files = Artefacts.SelectMany(xx => xx.GetFiles()).Distinct();
                             foreach (var file in files)
                             {
                                 var archiveName = file.GetArchiveName();

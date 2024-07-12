@@ -20,12 +20,12 @@ namespace ReleaseBuilder
             if (showHelp)
             {
                 RLog.InfoFormat("ReleaseBuilder ");
-                RLog.InfoFormat(" --(n)obuild       Do not build ateracts");
-                RLog.InfoFormat(" --(c)onfig        ReleaseConfig.xml file");
                 RLog.InfoFormat(" --(r)oot          Root folder");
-                RLog.InfoFormat(" --(p) --toolsdir  Add path to search for exec");
+                RLog.InfoFormat(" --(c)onfig        ReleaseConfig.xml file");
+                RLog.InfoFormat(" --(p) --toolsdir  Add path to search for tools. Can occur multiple times.");
                 RLog.InfoFormat(" --(t)arget        Target to build");
                 RLog.InfoFormat(" --(v)erbpse       Increase verbosity. Can be used twice.");
+                RLog.InfoFormat(" --(n)obuild       Do not build ateracts");
                 return 0;
             }
             while (true)

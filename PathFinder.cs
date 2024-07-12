@@ -26,7 +26,7 @@ namespace ReleaseBuilder
             foreach (var path in paths)
             {
                 var dir = "";
-                foreach (var directory in path)
+                foreach (var directory in path.Where(xx=>!string.IsNullOrEmpty(xx)))
                 {
                     string fullPath = "";
                     if (directory == "-")
@@ -52,7 +52,7 @@ namespace ReleaseBuilder
             foreach (var path in paths)
             {
                 var dir = "";
-                foreach (var directory in path)
+                foreach (var directory in path.Where(xx => !string.IsNullOrEmpty(xx)))
                 {
                     string fullPath = "";
                     dir = Path.Combine(dir, directory);

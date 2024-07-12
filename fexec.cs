@@ -34,12 +34,13 @@ namespace rjtool
 			myProcess.StartInfo.RedirectStandardOutput = !useShellExecute;
 			myProcess.StartInfo.RedirectStandardError = !useShellExecute;
 			var v = myProcess.Start();
+			RLog.TraceFormat("Exec: {0} {1}", programFilePath, commandLineArgs);
 			if (useShellExecute)
 			{
 				myProcess.WaitForExit();
                 if (requiredExitCodes != null && requiredExitCodes.Any() && !requiredExitCodes.Contains(myProcess.ExitCode))
                 {
-                    throw new Exception("Command {0} failed " + Path.GetFileName(programFilePath));
+                    throw new Exception(string.Format("Command {0} failed ",Path.GetFileName(programFilePath)));
                 }
                 return "";
 			}
@@ -48,7 +49,6 @@ namespace rjtool
 				StreamReader sOut = myProcess.StandardOutput;
 				StreamReader sErr = myProcess.StandardError;
 				var rv = new StringBuilder();
-				RLog.TraceFormat("exec {0} {1}", programFilePath, commandLineArgs);
 				try
 				{
 					string str;
@@ -85,7 +85,7 @@ namespace rjtool
 						if (requiredExitCodes != null && requiredExitCodes.Any() && !requiredExitCodes.Contains(myProcess.ExitCode))
 						{
 							RLog.ErrorFormat(rv.ToString());
-							throw new Exception("Command {0} failed " + Path.GetFileName(programFilePath));
+							throw new Exception(String.Format("Command {0} {1} failed ", Path.GetFileName(programFilePath), commandLineArgs));
 						}
 					}
 				}
@@ -119,7 +119,8 @@ namespace rjtool
                             return Path.GetFullPath(path);
                     }
                 }
-                throw new FileNotFoundException(new FileNotFoundException().Message, exe);
+				RLog.ErrorFormat("FindExePath: Could not locate {0}", exe);
+                throw new FileNotFoundException(exe);
             }
             return Path.GetFullPath(exe);
         }
