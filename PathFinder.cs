@@ -40,7 +40,13 @@ namespace ReleaseBuilder
                         fullPath = Path.Combine(dir, toFind);
                     }
                     if (Directory.Exists(fullPath))
+                    {
+                        RLog.DebugFormat("-- found {0}", fullPath);
                         return fullPath;
+                    }
+                    else
+                        RLog.DebugFormat("-- not found {0}", fullPath);
+
                 }
             }
             throw new Exception("Cannot locate " + toFind);
