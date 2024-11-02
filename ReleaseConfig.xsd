@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <xs:schema id="NewDataSet" xmlns="" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
   <xs:element name="ReleaseConfig">
     <xs:complexType>
@@ -56,6 +56,20 @@
                         <xs:attribute name="name" type="xs:string" />
                       </xs:complexType>
                     </xs:element>
+                    <xs:element minOccurs="0" maxOccurs="unbounded" name="xml-edit">
+                      <xs:complexType>
+                        <xs:sequence>
+                          <xs:element minOccurs="0" maxOccurs="unbounded" name="node">
+                            <xs:complexType>
+                              <xs:attribute name="path" type="xs:string" use="optional" />
+                              <xs:attribute name="action" type="xs:string" use="optional" />
+                            </xs:complexType>
+                          </xs:element>
+                        </xs:sequence>
+                        <xs:attribute name="file" type="xs:string" use="optional" />
+                        <xs:attribute name="omit-declaration" type="xs:boolean" use="optional" />
+                      </xs:complexType>
+                    </xs:element>
                     <xs:element name="exec" minOccurs="0" maxOccurs="unbounded">
                       <xs:complexType>
                         <xs:attribute name="app" type="xs:string" />
@@ -101,14 +115,14 @@
             <xs:attribute name="file" type="xs:string" />
           </xs:complexType>
         </xs:element>
+        <xs:element minOccurs="0" maxOccurs="unbounded" name="ReleaseBuilder">
+          <xs:complexType>
+            <xs:attribute name="folder" type="xs:string" use="optional" />
+            <xs:attribute name="process" type="xs:boolean" use="optional" />
+            <xs:attribute name="file" type="xs:string" use="optional" />
+          </xs:complexType>
+        </xs:element>
       </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-  <xs:element name="NewDataSet" msdata:IsDataSet="true" msdata:UseCurrentLocale="true">
-    <xs:complexType>
-      <xs:choice minOccurs="0" maxOccurs="unbounded">
-        <xs:element ref="ReleaseConfig" />
-      </xs:choice>
     </xs:complexType>
   </xs:element>
 </xs:schema>

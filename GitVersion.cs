@@ -11,9 +11,9 @@ namespace rjtool
 	public class GitVersion
 	{
 
-		public long? Major { get; set; }
-		public long? Minor { get; set; }
-		public long? Patch { get; set; }
+		public int Major { get; set; }
+		public int Minor { get; set; }
+		public int Patch { get; set; }
 		public string PreReleaseTag { get; set; }
 		public string PreReleaseTagWithDash { get; set; }
 		public string PreReleaseLabel { get; set; }

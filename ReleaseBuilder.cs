@@ -371,29 +371,61 @@ namespace ReleaseBuilder
                         }
                     case "create":
                         {
-                            var file = expand_vars(GetAttribute<string>(actionNode, "file"));
-                            var filePath = PathFinder.FindFile(file, new[] {
-                                        new List<string>(new []{path,newPathAttribute}),
-                                        new List<string>(new []{Root}),
-                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
-                                     });
-                            if (filePath != null)
-                                file = filePath;
-                            else
-                            {
-                                var fileFolder = PathFinder.FindDirectory(Path.GetDirectoryName(file), new[] {
-                                        new List<string>(new []{path}),
-                                        new List<string>(new []{Root}),
-                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
-                                     });
-                                if (fileFolder != null)
-                                    file = Path.Join(fileFolder, Path.GetFileName(file));
-                                else
-                                    throw new Exception("Could not create " + file + " as path not found");
-                            }
+                            string? file = GetFilenameFromNode(path, newPathAttribute, actionNode);
                             var text = actionNode.Value;
                             text = expand_vars(text).ReplaceLineEndings("\n");
                             File.WriteAllText(file, text);
+                            break;
+                        }
+                    case "xml-edit":
+                        {
+                            string? file = GetFilenameFromNode(path, newPathAttribute, actionNode);
+                            if (!string.IsNullOrEmpty(file))
+                            {
+                                var xdoc = XDocument.Load(file);
+                                var changed = false;
+                                var omitDeclaration = actionNode.Attribute("omit-declaration") != null;
+                                foreach (XElement editNode in actionNode.Nodes())
+                                {
+                                    switch (editNode.Name.ToString().ToLower())
+                                    {
+                                        case "node":
+                                            {
+                                                var pathSelector = GetAttribute<string>(editNode, "path");
+                                                var nodeAction = GetAttribute<string>(editNode, "action");
+                                                var elements = xdoc.XPathSelectElements(pathSelector);
+                                                foreach (var element in elements)
+                                                {
+                                                    var nv = Transform(nodeAction, element.Value);
+                                                    if (nv != element.Value)
+                                                    {
+                                                        element.Value = nv;
+                                                        changed = true;
+                                                        RLog.TraceFormat("Node {0} value {1}", element.Name, element.Value);
+                                                    }
+                                                }
+                                                break;
+                                            }
+
+                                        default:
+                                            ThrowErrorForNode(editNode, String.Format("Unknown directive {0}", editNode.Name));
+                                            break;
+                                    }
+                                }
+                                if (changed)
+                                {
+                                    XmlWriterSettings settings = new XmlWriterSettings
+                                    {
+                                        OmitXmlDeclaration = omitDeclaration,
+                                        Indent = true
+                                    };
+
+                                    using (XmlWriter writer = XmlWriter.Create(file, settings))
+                                    {
+                                        xdoc.Save(writer);
+                                    }
+                                }
+                            }
                             break;
                         }
                     case "copy":
@@ -558,6 +590,33 @@ namespace ReleaseBuilder
                 }
             }
         }
+
+        private string GetFilenameFromNode(string path, string? newPathAttribute, XElement actionNode)
+        {
+            var file = expand_vars(GetAttribute<string>(actionNode, "file"));
+            var filePath = PathFinder.FindFile(file, new[] {
+                                        new List<string>(new []{path,newPathAttribute}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+            if (filePath != null)
+                file = filePath;
+            else
+            {
+                var fileFolder = PathFinder.FindDirectory(Path.GetDirectoryName(file), new[] {
+                                        new List<string>(new []{path}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+                if (fileFolder != null)
+                    file = Path.Join(fileFolder, Path.GetFileName(file));
+                else
+                    throw new Exception("Could not create " + file + " as path not found");
+            }
+
+            return file;
+        }
+
         private bool EditFile(string fromPath, IEnumerable<XElement> transforms)
         {
             if (transforms != null && transforms.Any())
@@ -702,6 +761,8 @@ namespace ReleaseBuilder
                 var method = parts[0];
                 switch (method.ToLower())
                 {
+                    case "set":
+                        return expand_vars(parts[1]);
                     case "getversion":
                         {
                             argCheck(parts, 2, Transformation);
@@ -772,7 +833,7 @@ namespace ReleaseBuilder
                     result = s1 != s2;
                     break;
                 default:
-                    RLog.ErrorFormat("Unknow comparison {0}", cond);
+                    RLog.ErrorFormat("Unknown comparison {0}", cond);
                     break;
             }
             if (result)
@@ -843,6 +904,8 @@ namespace ReleaseBuilder
             {
                 addvar("GITVERSION.JSON", json);
                 addvar("VERSION", Info.NuGetVersionV2);
+                var iv = new PackedIntegerVersion(Info);
+                addvar("IntSemVer", iv.Value);
                 var properties = from p in typeof(GitVersion).GetProperties()
                                  where p.PropertyType == typeof(string) &&
                                        p.CanRead &&
