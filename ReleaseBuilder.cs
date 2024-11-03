@@ -78,10 +78,10 @@ namespace ReleaseBuilder
 
                 RLog.InfoFormat("Version {0}", vars["SemVer"]);
 
-                LoadConfigFromXml(configFile, target, nobuild);
+                LoadConfigFromXml(configFile, PublishType, NoBuild);
 
                 if (!Targets.ContainsKey(PublishType))
-                    RLog.InfoFormat("No target config for {0}", target);
+                    RLog.InfoFormat("No target config for {0}", PublishType);
 
                 RLog.InfoFormat("Publish config target: {0}", PublishType);
             }
@@ -113,9 +113,12 @@ namespace ReleaseBuilder
                         Targets[name.Value].Version = expand_vars(av);
                         addvar("TargetVersion", av);
                     }
+
                     if (name.Value.Equals(target, StringComparison.InvariantCultureIgnoreCase))
                     {
-                        processElements(node, "Set", (n) =>
+                        addvar("TARGETPATH", Targets[name.Value].Path.FullName);
+                        
+                         processElements(node, "Set", (n) =>
                         {
                             processAttributes(n, "name", (nn) =>
                             {
@@ -971,6 +974,7 @@ namespace ReleaseBuilder
                     return 0;
                 }
                 var target = Targets[PublishType];
+
                 var filename = new List<string>
                 {
                     TargetName,
