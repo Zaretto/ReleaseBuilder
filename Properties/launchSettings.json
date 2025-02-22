@@ -2,8 +2,8 @@
   "profiles": {
     "ReleaseBuilder": {
       "commandName": "Project",
-      "commandLineArgs": "--target test -v  --toolsdir i:\\apps\\nodejs --toolsdir  c:\\users\\richard\\AppData\\Roaming\\npm --toolsdir I:\\dev\\brightserve\\MSOS\\release-tools ",
-      "workingDirectory": "I:\\dev\\brightserve\\MSOS\\MSOS.UWP.AppPackages"
+      "commandLineArgs": "--target test -v  --toolsdir i:\\apps\\nodejs --toolsdir  c:\\users\\richard\\AppData\\Roaming\\npm --toolsdir C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\ --toolsdir I:\\dev\\brightserve\\MSOS\\release-tools -c I:\\dev\\brightserve\\stroma\\phe-0002-cts-microbiology-app\\aspnet-core\\ReleaseConfigAndroidLabtrac.xml",
+      "workingDirectory": "i:\\dev\\brightserve\\stroma\\phe-0002-cts-microbiology-app\\aspnet-core"
     }
   }
 }

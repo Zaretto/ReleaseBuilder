@@ -31,7 +31,16 @@
           <xs:complexType>
             <xs:sequence>
               <xs:choice maxOccurs="unbounded">
-              <xs:element name="folder" type="xs:string" minOccurs="0" msdata:Ordinal="1" />
+                <xs:element minOccurs="0" name="folder">
+                  <xs:complexType>
+                    <xs:simpleContent>
+                      <xs:extension base="xs:string">
+                        <xs:attribute name="skip-directories-front" type="xs:unsignedByte"
+                          use="required" />
+                      </xs:extension>
+                    </xs:simpleContent>
+                  </xs:complexType>
+                </xs:element>
               <xs:element name="build" minOccurs="0" maxOccurs="unbounded">
                 <xs:complexType>
                   <xs:sequence>
@@ -80,7 +89,7 @@
                     </xs:element>
                     <xs:element name="create" nillable="true" minOccurs="0" maxOccurs="unbounded">
                       <xs:complexType>
-                        <xs:simpleContent msdata:ColumnName="create_Text" msdata:Ordinal="1">
+                        <xs:simpleContent>
                           <xs:extension base="xs:string">
                             <xs:attribute name="file" type="xs:string" />
                           </xs:extension>
@@ -93,7 +102,7 @@
               </xs:element>
               <xs:element name="file" nillable="true" minOccurs="0" maxOccurs="unbounded">
                 <xs:complexType>
-                  <xs:simpleContent msdata:ColumnName="file_Text" msdata:Ordinal="4">
+                  <xs:simpleContent>
                     <xs:extension base="xs:string">
                       <xs:attribute name="folder" type="xs:string" />
                       <xs:attribute name="newname" type="xs:string" />
