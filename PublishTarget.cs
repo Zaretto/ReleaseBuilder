@@ -11,7 +11,7 @@ namespace ReleaseBuilder
             if (path != null && Directory.Exists(path))
                 this.Path = new DirectoryInfo(path);
             else
-                throw new Exception(string.Format("{0} missing Path", name));
+                throw new Exception(string.Format("PublishTarget: {0} path not found", name));
 
         }
         public string GetVersion(string v) => string.IsNullOrEmpty(Version) ? v : Version;

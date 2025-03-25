@@ -28,6 +28,8 @@ namespace ReleaseBuilder
         public Dictionary<string, PublishTarget> Targets { get; private set; } = new Dictionary<string, PublishTarget>();
         public string TargetName { get; private set; }
         public bool NoBuild { get; }
+        public Dictionary<string,bool> Modules { get; private set; } = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        public FileInfo? ConfigFile { get; }
 
         public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild)
         {
@@ -45,6 +47,8 @@ namespace ReleaseBuilder
                 Root = Directory.GetCurrentDirectory();
 
             NoBuild = nobuild;
+            if (target != null)
+                PublishType = target;
 
             fexec.AddExePath(ToolsDirectories);
 
@@ -65,29 +69,31 @@ namespace ReleaseBuilder
             if (File.Exists(cpath))
             {
                 configFile = new FileInfo(cpath);
-
-                if (target != null)
-                    PublishType = target;
-
-                addvar("TYPE", PublishType); 
-                addvar("PUBLISHROOT", Root);
-
-                RLog.TraceFormat("Using config file {0}", configFile.FullName);
-
-                GetVersion();
-
-                RLog.InfoFormat("Version {0}", vars["SemVer"]);
-
-                LoadConfigFromXml(configFile, PublishType, NoBuild);
-
-                if (!Targets.ContainsKey(PublishType))
-                    RLog.InfoFormat("No target config for {0}", PublishType);
-
-                RLog.InfoFormat("Publish config target: {0}", PublishType);
             }
             else RLog.ErrorFormat("Could not locate config file");
+            ConfigFile = configFile;
         }
+        public bool Valid => ConfigFile != null && Built;
+        private bool Built { get; set; }
+        public void Build()
+        {
+            addvar("TYPE", PublishType);
+            addvar("PUBLISHROOT", Root);
 
+            RLog.TraceFormat("Using config file {0}", ConfigFile.FullName);
+
+            GetVersion();
+
+            RLog.InfoFormat("Version {0}", vars["SemVer"]);
+
+            LoadConfigFromXml(ConfigFile, PublishType, NoBuild);
+
+            if (!Targets.ContainsKey(PublishType))
+                RLog.InfoFormat("No target config for {0}", PublishType);
+
+            RLog.InfoFormat("Publish config target: {0}", PublishType);
+            Built = true;
+        }
         private void LoadConfigFromXml(FileInfo configFile, string target, bool nobuild)
         {
             var doc = XDocument.Load(configFile.FullName);
@@ -276,6 +282,18 @@ namespace ReleaseBuilder
         {
             var folderAttribute = expand_vars(GetAttribute(node, "folder", ""));
             var fileAttribute = expand_vars(GetAttribute(node, "file", "ReleaseConfig.xml"));
+            var nameAttribute = GetAttribute(node, "name", "");
+            if (!string.IsNullOrEmpty(nameAttribute))
+            {
+                if (Modules.Any() && !Modules.ContainsKey(nameAttribute))
+                {
+                    RLog.InfoFormat("Not building {0} because not in modules list", nameAttribute);
+                    return;
+                }
+                var newFileAttribute = "ReleaseConfig" + nameAttribute + ".xml";
+                RLog.DebugFormat("Name {0} attribute overrides file {1} -> {2}", nameAttribute, fileAttribute, newFileAttribute);
+                fileAttribute = newFileAttribute;
+            }
             var noBuildAttribute = GetAttribute(node, "nobuild", NoBuild);
             var processAttribute = GetAttribute(node, "process", false);
             var fromPath = PathFinder.FindDirectory(folderAttribute, new[] {
@@ -302,6 +320,7 @@ namespace ReleaseBuilder
                     Directory.SetCurrentDirectory(newRoot.FullName);
                     var newConfigFile = new FileInfo(fromFile);
                     var rb = new ReleaseBuilder(newRoot, newConfigFile, PublishType, ToolsDirectories, noBuildAttribute);
+                    rb.Build();
                     if (processAttribute)
                         rb.Process();
                 }
@@ -582,7 +601,8 @@ namespace ReleaseBuilder
                                 LogForNodeWithDetails(LogMessageLevel.Error,actionNode, "Cannot locate {0}", app);
                             else
                             {
-                                var msg = fexec.executeCommand(appFile, expand_vars(args), folder, true, logStdout, requiredExitCodes);
+                                args = expand_vars(args);
+                                var msg = fexec.executeCommand(appFile, args, folder, true, logStdout, requiredExitCodes);
                                 RLog.TraceFormat(msg);
                             }
                             break;
@@ -948,17 +968,23 @@ namespace ReleaseBuilder
             if (rv == null)
                 return "";
 
-            if (rv.StartsWith("$"))
-                rv = Environment.GetEnvironmentVariable(rv.Substring(1))!;
-            else foreach (var var in vars)
-                {
-                    var rt = "~" + var.Key + "~";
-                    rv = rv.Replace(rt, var.Value);
-                }
-            //cmd = cmd.Replace("~VERSION~", release_version);
-            //cmd = cmd.Replace("~PATH~", ArchivePath);
-            //cmd = cmd.Replace("~TYPE~", PublishType);
-            //cmd = cmd.Replace("~APPPATH~", APPPATH);
+            rv= Regex.Replace(rv, @"\$(\w+)", match =>
+            {
+                string variable = match.Groups[1].Value;
+                var rv = Environment.GetEnvironmentVariable(variable);
+                if (rv == null)
+                    throw new Exception("Environment variable not found: " + variable);
+                return rv;
+            });
+            rv= Regex.Replace(rv, "\\~(.*?)\\~", match =>
+            {
+                string variable = match.Groups[1].Value;
+                if (vars.ContainsKey(variable))
+                    return vars[variable];
+                else
+                    throw new Exception("Variable not found: " + variable);
+            });
+
             return rv;
         }
 
@@ -1015,6 +1041,11 @@ namespace ReleaseBuilder
                 return 0;
             }
             return 1;
+        }
+
+        internal void AddModule(string module)
+        {
+            Modules[module] = true;
         }
     }
 }

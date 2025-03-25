@@ -17,15 +17,18 @@ namespace ReleaseBuilder
             var showHelp = options.GetSwitchArgument("help", 'h');
             var nobuild = options.GetSwitchArgument("nobuild", 'n');
             var toolPaths = new List<DirectoryInfo>();
+            var modules = new List<string>();
+
             if (showHelp)
             {
                 RLog.InfoFormat("ReleaseBuilder ");
                 RLog.InfoFormat(" --(r)oot          Root folder");
                 RLog.InfoFormat(" --(c)onfig        ReleaseConfig.xml file");
+                RLog.InfoFormat(" --(m)odule        Add path to search for tools. Can occur multiple times.");
+                RLog.InfoFormat(" --(n)obuild       Do not build artefacts");
                 RLog.InfoFormat(" --(p) --toolsdir  Add path to search for tools. Can occur multiple times.");
                 RLog.InfoFormat(" --(t)arget        Target to build");
-                RLog.InfoFormat(" --(v)erbpse       Increase verbosity. Can be used twice.");
-                RLog.InfoFormat(" --(n)obuild       Do not build ateracts");
+                RLog.InfoFormat(" --(v)erbose       Increase verbosity. Can be used twice.");
                 return 0;
             }
             while (true)
@@ -33,6 +36,14 @@ namespace ReleaseBuilder
                 var path = options.GetDirectoryArgument("toolsdir", 'p');
                 if (path != null)
                     toolPaths.Add(path);
+                else
+                    break;
+            } 
+            while (true)
+            {
+                var module = options.GetStringArgument("module", 'm');
+                if (!string.IsNullOrEmpty(module))
+                    modules.Add(module);
                 else
                     break;
             }
@@ -51,12 +62,16 @@ namespace ReleaseBuilder
                     RLog.DebugFormat("target {0}", target);
                 RLog.DebugFormat("verbose {0}", verbose);
                 RLog.DebugFormat("nobuild {0}", nobuild);
+                if (modules.Any())
+                    RLog.TraceFormat("building only {0}", string.Join(",", modules));
             }
             if (options.IsInvalid())
                 return -1;
             try
             {
                 var rb = new ReleaseBuilder(root, xmlConfig, target, toolPaths, nobuild);
+                modules.ForEach(m => {rb.AddModule(m);});
+                rb.Build();
                 return rb.Process();
             }
             catch (Exception ex)

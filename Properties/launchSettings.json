@@ -2,8 +2,8 @@
   "profiles": {
     "ReleaseBuilder": {
       "commandName": "Project",
-      "commandLineArgs": "--target test -v  --toolsdir i:\\apps\\nodejs --toolsdir  c:\\users\\richard\\AppData\\Roaming\\npm --toolsdir C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\ --toolsdir I:\\dev\\brightserve\\MSOS\\release-tools -c I:\\dev\\brightserve\\stroma\\phe-0002-cts-microbiology-app\\aspnet-core\\ReleaseConfigAndroidLabtrac.xml",
-      "workingDirectory": "i:\\dev\\brightserve\\stroma\\phe-0002-cts-microbiology-app\\aspnet-core"
+      "commandLineArgs": "--target test -v  --toolsdir i:\\apps\\nodejs --toolsdir  c:\\users\\richard\\AppData\\Roaming\\npm --toolsdir C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\ --toolsdir I:\\dev\\brightserve\\MSOS\\release-tools -c ReleaseConfig.xml -m Android",
+      "workingDirectory": "i:\\dev\\brightserve\\klymat\\kly-0001-klymat-platform\\"
     }
   }
 }
