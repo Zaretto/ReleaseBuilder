@@ -25,6 +25,14 @@
             <xs:attribute name="name" type="xs:string" />
             <xs:attribute name="path" type="xs:string" />
             <xs:attribute name="archive-version" type="xs:string" />
+            <xs:attribute name="type">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="zip"/>
+                  <xs:enumeration value="folder"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
           </xs:complexType>
         </xs:element>
         <xs:element name="Artefacts" minOccurs="0" maxOccurs="unbounded">

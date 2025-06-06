@@ -5,6 +5,13 @@ namespace ReleaseBuilder
 {
     public class PublishTarget
     {
+        public enum TargetTypeEnum
+        {
+            ZipFile,
+            LocalFolder,
+            RemoteFolderSCP,
+        }
+
         public PublishTarget(string name, string path)
         {
             this.Name = name;
@@ -18,5 +25,6 @@ namespace ReleaseBuilder
         public string Name { get; }
         public DirectoryInfo? Path { get; }
         public string Version { get; set; }
+        public TargetTypeEnum Type { get; set; } = TargetTypeEnum.ZipFile;
     }
 }

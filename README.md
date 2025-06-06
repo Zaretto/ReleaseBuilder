@@ -11,3 +11,5 @@ then copy the files to wherever on your local machine.
 
 cd C:\Users\richa\source\repos\my-tools\rtools\ReleaseBuilder\bin\Release\net7.0\publish
 copy /y * i:\apps\utils
+
+xcopy C:\Users\richa\source\repos\my-tools\rtools\ReleaseBuilder\bin\Release\net7.0\publish\ i:\apps\utils\

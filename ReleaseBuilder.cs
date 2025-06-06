@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.XPath;
+using static ReleaseBuilder.PublishTarget;
 
 namespace ReleaseBuilder
 {
@@ -28,7 +29,7 @@ namespace ReleaseBuilder
         public Dictionary<string, PublishTarget> Targets { get; private set; } = new Dictionary<string, PublishTarget>();
         public string TargetName { get; private set; }
         public bool NoBuild { get; }
-        public Dictionary<string,bool> Modules { get; private set; } = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, bool> Modules { get; private set; } = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         public FileInfo? ConfigFile { get; }
 
         public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild)
@@ -40,7 +41,7 @@ namespace ReleaseBuilder
             if (Directory.Exists(AppDomain.CurrentDomain.BaseDirectory))
                 ToolsDirectories.Add(new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory));
             if (ToolsDirectories.Any())
-                RLog.TraceFormat("Tools directories {0}", string.Join(",", ToolsDirectories.Select(xx=>xx.FullName)));
+                RLog.TraceFormat("Tools directories {0}", string.Join(",", ToolsDirectories.Select(xx => xx.FullName)));
             if (root != null)
                 Root = root.FullName;
             else
@@ -86,22 +87,31 @@ namespace ReleaseBuilder
 
             RLog.InfoFormat("Version {0}", vars["SemVer"]);
 
-            LoadConfigFromXml(ConfigFile, PublishType, NoBuild);
+            if (LoadConfigFromXml(ConfigFile, PublishType, NoBuild))
+            {
 
-            if (!Targets.ContainsKey(PublishType))
-                RLog.InfoFormat("No target config for {0}", PublishType);
+                if (!Targets.ContainsKey(PublishType))
+                    RLog.InfoFormat("No target config for {0}", PublishType);
 
-            RLog.InfoFormat("Publish config target: {0}", PublishType);
-            Built = true;
+                RLog.InfoFormat("Publish config target: {0}", PublishType);
+                Built = true;
+            }
         }
-        private void LoadConfigFromXml(FileInfo configFile, string target, bool nobuild)
+        private bool LoadConfigFromXml(FileInfo configFile, string target, bool nobuild)
         {
             var doc = XDocument.Load(configFile.FullName);
             XPathNavigator navigator = doc.CreateNavigator();
             foreach (XElement node in doc.Root.Nodes().OfType<XElement>())
             {
                 if (node.Name == "Name")
+                {
                     TargetName = node.Value;
+                    if (Modules.Any() && !Modules.Any(xx=> TargetName.ToLower().Contains(xx.Key.ToLower())))
+                    {
+                        RLog.InfoFormat("Not building {0} because not in modules", TargetName);
+                        return false;
+                    }
+                }
                 if (node.Name == "Target")
                 {
                     //     <Target name="test" path="$SYNC_MSOS_TEST" archive="7z a -r" />
@@ -119,22 +129,28 @@ namespace ReleaseBuilder
                         Targets[name.Value].Version = expand_vars(av);
                         addvar("TargetVersion", av);
                     }
-
+                    var type = GetAttribute(node, "type", "zip");
+                    if (type == "zip")
+                        Targets[name.Value].Type = TargetTypeEnum.ZipFile;
+                    else if (type == "folder")
+                        Targets[name.Value].Type = TargetTypeEnum.LocalFolder;
+                    else
+                        RLog.ErrorFormat("Uknown target type {0}", type);
                     if (name.Value.Equals(target, StringComparison.InvariantCultureIgnoreCase))
                     {
                         addvar("TARGETPATH", Targets[name.Value].Path.FullName);
-                        
-                         processElements(node, "Set", (n) =>
-                        {
-                            processAttributes(n, "name", (nn) =>
-                            {
-                                processAttributes(n, "value", (v) =>
-                                {
-                                    addvar(nn, v);
-                                });
-                            });
 
-                        });
+                        processElements(node, "Set", (n) =>
+                       {
+                           processAttributes(n, "name", (nn) =>
+                           {
+                               processAttributes(n, "value", (v) =>
+                               {
+                                   addvar(nn, v);
+                               });
+                           });
+
+                       });
                     }
                 }
                 if (node.Name == "Folder")
@@ -189,6 +205,7 @@ namespace ReleaseBuilder
                 if (node.Name == "Artefacts")
                 {
                     var artefactFolder = GetAttribute(node, "folder", "");
+                    
                     if (When(node))
                     {
                         if (!string.IsNullOrEmpty(artefactFolder))
@@ -210,7 +227,7 @@ namespace ReleaseBuilder
                                     {
                                         var file = expand_vars(child.Value);
                                         var fileFolder = GetAttribute(child, "folder", "");
-                                        var newname = GetAttribute(child, "newname", "");
+                                        var newname = expand_vars(GetAttribute(child, "newname", ""));
                                         if (fileFolder != "")
                                         {
                                             var nfolder = PathFinder.FindDirectory(expand_vars(fileFolder),
@@ -262,6 +279,7 @@ namespace ReleaseBuilder
                     releaseBuilder(node);
                 }
             }
+            return true;
         }
 
         private bool When(XElement node)
@@ -271,7 +289,7 @@ namespace ReleaseBuilder
             {
                 if (Transform(whenAttribute, "") == "")
                 {
-                    LogForNodeWithDetails(LogMessageLevel.Trace, node, "Not processing node because of active attribute {0}",whenAttribute);
+                    LogForNodeWithDetails(LogMessageLevel.Trace, node, "Not processing node because of active attribute {0}", whenAttribute);
                     return false;
                 }
             }
@@ -281,19 +299,7 @@ namespace ReleaseBuilder
         private void releaseBuilder(XElement node)
         {
             var folderAttribute = expand_vars(GetAttribute(node, "folder", ""));
-            var fileAttribute = expand_vars(GetAttribute(node, "file", "ReleaseConfig.xml"));
-            var nameAttribute = GetAttribute(node, "name", "");
-            if (!string.IsNullOrEmpty(nameAttribute))
-            {
-                if (Modules.Any() && !Modules.ContainsKey(nameAttribute))
-                {
-                    RLog.InfoFormat("Not building {0} because not in modules list", nameAttribute);
-                    return;
-                }
-                var newFileAttribute = "ReleaseConfig" + nameAttribute + ".xml";
-                RLog.DebugFormat("Name {0} attribute overrides file {1} -> {2}", nameAttribute, fileAttribute, newFileAttribute);
-                fileAttribute = newFileAttribute;
-            }
+
             var noBuildAttribute = GetAttribute(node, "nobuild", NoBuild);
             var processAttribute = GetAttribute(node, "process", false);
             var fromPath = PathFinder.FindDirectory(folderAttribute, new[] {
@@ -301,14 +307,37 @@ namespace ReleaseBuilder
                                         new List<string>(new []{Directory.GetCurrentDirectory()})
                     });
 
+            var fileAttribute = expand_vars(GetAttribute(node, "file", ""));
+            var nameAttribute = GetAttribute(node, "name", "");
+            if (!string.IsNullOrEmpty(nameAttribute))
+            {
+                if (Modules.Any() && !Modules.Any(xx => nameAttribute.ToLower().Contains(xx.Key.ToLower())))
+                {
+                    RLog.InfoFormat("Not building {0} because not in modules list", nameAttribute);
+                    return;
+                }
+                var newFileAttribute = "ReleaseConfig" + nameAttribute + ".xml";
+                if (string.IsNullOrEmpty(fileAttribute))
+                {
+                    if (null != PathFinder.FindFile(newFileAttribute, new[] { new List<string>(new[] { fromPath }), }))
+                    {
+                        RLog.DebugFormat("No name specified and {0} attribute sets file {1} -> {2}", nameAttribute, fileAttribute, newFileAttribute);
+                        fileAttribute = newFileAttribute;
+                    }
+                }
+            }
+            if (string.IsNullOrEmpty(fileAttribute))
+                fileAttribute = "ReleaseConfig.xml";
+
+
             var fromFile = PathFinder.FindFile(fileAttribute, new[] {
                                         new List<string>(new []{fromPath}),
                                         });
             if (noBuildAttribute && !processAttribute)
                 LogForNodeWithDetails(LogMessageLevel.Error, node, "nobuild cannot be true if process is false as no actions will result");
 
-                if (CheckParamNotEmpty(fromPath, String.Format("ReleaseBuilder: folder is required and must point to a valid directory ({0})", folderAttribute))
-                && CheckParamNotEmpty(fileAttribute, String.Format("ReleaseBuilder: file is required and must point to a valid directory {0}", fileAttribute)))
+            if (CheckParamNotEmpty(fromPath, String.Format("ReleaseBuilder: folder is required and must point to a valid directory ({0})", folderAttribute))
+            && CheckParamNotEmpty(fileAttribute, String.Format("ReleaseBuilder: file is required and must point to a valid directory {0}", fileAttribute)))
             {
                 RLog.InfoFormat("Build release from {0}", fromFile);
                 var currentFolder = Directory.GetCurrentDirectory();
@@ -374,7 +403,7 @@ namespace ReleaseBuilder
                                     if (cleanFolders)
                                     {
                                         foreach (var toDelFolder in Directory.EnumerateDirectories(cleanFolder, cleanPattern, SearchOption.AllDirectories))
-                                    {
+                                        {
                                             try
                                             {
                                                 Directory.Delete(toDelFolder, true);
@@ -590,7 +619,7 @@ namespace ReleaseBuilder
                             var args = GetAttribute(actionNode, "args", "");
                             var logStdout = GetAttribute<bool>(actionNode, "log-stdout");
 
-                            var requiredExitCodes = GetAttributeAsArray(actionNode, "required-exit-codes",  (av) => av.Split(',').Select(xx => int.Parse(xx)));
+                            var requiredExitCodes = GetAttributeAsArray(actionNode, "required-exit-codes", (av) => av.Split(',').Select(xx => int.Parse(xx)));
                             if (requiredExitCodes == null)
                                 requiredExitCodes = new[] { 0 };
 
@@ -598,7 +627,7 @@ namespace ReleaseBuilder
                             if (appFile == null)
                                 appFile = fexec.FindExePath(app);
                             if (appFile == null)
-                                LogForNodeWithDetails(LogMessageLevel.Error,actionNode, "Cannot locate {0}", app);
+                                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "Cannot locate {0}", app);
                             else
                             {
                                 args = expand_vars(args);
@@ -704,7 +733,7 @@ namespace ReleaseBuilder
         private string? FindTool(string? app)
         {
             var file = app;
-            var rv = PathFinder.FindFile(file, 
+            var rv = PathFinder.FindFile(file,
                                             new[] {
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
@@ -713,7 +742,7 @@ namespace ReleaseBuilder
             {
                 rv = PathFinder.FindFile(file, ToolsDirectories.Select(xx => new List<string>(new[] { xx.FullName })).ToArray());
             }
-            return rv;                       
+            return rv;
         }
 
         private string? AddFolder(int skipCount, string root, string? directory)
@@ -759,6 +788,7 @@ namespace ReleaseBuilder
                     if (file != null)
                     {
                         Artefacts.Add(new Artefact(new FileInfo(file), newName));
+                        RLog.DebugFormat("Added {0}: {1}", file, newName);
                     }
                     else
                         RLog.ErrorFormat("Cannot locate file artefact {0}", srcFile);
@@ -881,7 +911,7 @@ namespace ReleaseBuilder
         }
         private void ThrowErrorForNode(XElement node, string message)
         {
-           
+
             IXmlLineInfo info = node;
             var sb = new StringBuilder();
             sb.Append(message);
@@ -906,7 +936,7 @@ namespace ReleaseBuilder
             }
         }
 
-        private T? GetAttribute<T>(XElement node, string v, T? defaultValue=default(T))
+        private T? GetAttribute<T>(XElement node, string v, T? defaultValue = default(T))
         {
             var rv = node.Attribute(v);
             if (rv == null)
@@ -968,7 +998,7 @@ namespace ReleaseBuilder
             if (rv == null)
                 return "";
 
-            rv= Regex.Replace(rv, @"\$(\w+)", match =>
+            rv = Regex.Replace(rv, @"\$(\w+)", match =>
             {
                 string variable = match.Groups[1].Value;
                 var rv = Environment.GetEnvironmentVariable(variable);
@@ -976,7 +1006,7 @@ namespace ReleaseBuilder
                     throw new Exception("Environment variable not found: " + variable);
                 return rv;
             });
-            rv= Regex.Replace(rv, "\\~(.*?)\\~", match =>
+            rv = Regex.Replace(rv, "\\~(.*?)\\~", match =>
             {
                 string variable = match.Groups[1].Value;
                 if (vars.ContainsKey(variable))
@@ -1007,40 +1037,58 @@ namespace ReleaseBuilder
                     PublishType,
                     target.GetVersion(vars["SemVer"])
                 };
-                int fileCount = 0;
-                var zipFileName = Path.Combine(target.Path.FullName, string.Join("-", filename) + ".zip");
-                File.Delete(zipFileName);
+                switch (target.Type)
                 {
-                    using (FileStream zipToOpen = new FileStream(zipFileName, FileMode.Create))
-                    {
-                        using (var archive = new ZipArchive(zipToOpen, ZipArchiveMode.Update))
+                    case TargetTypeEnum.ZipFile:
+                        CreateZipFileArtefact(files, target, filename);
+                        return 0;
+                    case TargetTypeEnum.LocalFolder:
                         {
+//                            var outputFile = Path.Combine(target.Path.FullName, string.Join("-", filename) + ".zip");
+
                             foreach (var file in files)
                             {
-                                var archiveName = file.GetArchiveName();
-                                var sourceName = Path.GetFileName(file.Name);
-                                if (archiveName != sourceName)
-                                    RLog.TraceFormat(String.Format("Adding {0} (from {1})", archiveName, sourceName));
-                                else
-                                    RLog.TraceFormat(String.Format("Adding {0}", archiveName));
+                                var outputFileName = Path.Combine(target.Path.FullName, file.GetArchiveName());
+                                RLog.TraceFormat(String.Format("Copy {0} (from {1})", outputFileName, Path.GetFileName(file.Name)));
+                                File.Copy(file.Name, outputFileName, true);
+                            }
+                            return 0;
+                        }
+                }
+            }
+            return 1;
+        }
+        private static void CreateZipFileArtefact(IEnumerable<FileDetails> files, PublishTarget target, List<string> filename)
+        {
+            int fileCount = 0;
+            var zipFileName = Path.Combine(target.Path.FullName, string.Join("-", filename) + ".zip");
+            File.Delete(zipFileName);
+            using (FileStream zipToOpen = new FileStream(zipFileName, FileMode.Create))
+            {
+                using (var archive = new ZipArchive(zipToOpen, ZipArchiveMode.Update))
+                {
+                    foreach (var file in files)
+                    {
+                        var archiveName = file.GetArchiveName();
+                        var sourceName = Path.GetFileName(file.Name);
+                        if (archiveName != sourceName)
+                            RLog.TraceFormat(String.Format("Adding {0} (from {1})", archiveName, sourceName));
+                        else
+                            RLog.TraceFormat(String.Format("Adding {0}", archiveName));
 
-                                ZipArchiveEntry entry = archive.CreateEntry(archiveName, CompressionLevel.Optimal);
-                                using (var infile = File.OpenRead(file.Name))
-                                {
-                                    fileCount++;
-                                    using (var os = entry.Open())
-                                    {
-                                        infile.CopyTo(os);
-                                    }
-                                }
+                        ZipArchiveEntry entry = archive.CreateEntry(archiveName, CompressionLevel.Optimal);
+                        using (var infile = File.OpenRead(file.Name))
+                        {
+                            fileCount++;
+                            using (var os = entry.Open())
+                            {
+                                infile.CopyTo(os);
                             }
                         }
                     }
-                    RLog.InfoFormat(String.Format("Created {0} with {1} files", zipFileName, fileCount));
                 }
-                return 0;
             }
-            return 1;
+            RLog.InfoFormat(String.Format("Created {0} with {1} files", zipFileName, fileCount));
         }
 
         internal void AddModule(string module)

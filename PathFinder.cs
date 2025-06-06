@@ -6,10 +6,10 @@ using System.Threading.Tasks;
 
 namespace ReleaseBuilder
 {
-    internal class PathFinder
+    public class PathFinder
     {
         /// <summary>
-        /// find a directory somewhere in the list of paths.
+        /// find a directory somewhere in a list of paths.
         /// </summary>
         /// <param name="toFind"></param>
         /// <param name="paths">list of paths. A "-" means append the string to find with a "-" in 
