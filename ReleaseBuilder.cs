@@ -9,6 +9,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Reflection.Metadata.Ecma335;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics.Arm;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -25,6 +26,7 @@ namespace ReleaseBuilder
         public string PublishType = "live";
         public string Root;
         private Dictionary<string, string> vars = new Dictionary<string, string>();
+        public bool IsValid => ConfigFile != null;
 
         public Dictionary<string, PublishTarget> Targets { get; private set; } = new Dictionary<string, PublishTarget>();
         public string TargetName { get; private set; }
@@ -156,9 +158,9 @@ namespace ReleaseBuilder
                 if (node.Name == "Folder")
                 {
                     //    <Folder name="APPPATH" path="MSOS.UWP_*" version="latest" />
-                    var name = GetAttribute<string>(node, "name");
+                    var name = GetFilePathAttribute(node, "name");
                     var versionName = GetAttribute<string>(node, "name-version");
-                    var path = GetAttribute<string>(node, "path");
+                    var path = GetFilePathAttribute(node, "path");
                     var version = GetAttribute(node, "version", "latest");
                     if (name != null && path != null)
                     {
@@ -442,7 +444,7 @@ namespace ReleaseBuilder
                                     {
                                         case "node":
                                             {
-                                                var pathSelector = GetAttribute<string>(editNode, "path");
+                                                var pathSelector = GetFilePathAttribute(editNode, "path");
                                                 var nodeAction = GetAttribute<string>(editNode, "action");
                                                 var elements = xdoc.XPathSelectElements(pathSelector);
                                                 foreach (var element in elements)
@@ -481,7 +483,7 @@ namespace ReleaseBuilder
                         }
                     case "copy":
                         {
-                            var from = GetAttribute<string>(actionNode, "from");
+                            var from = GetFilePathAttribute(actionNode, "from");
                             var recursive = GetAttribute(actionNode, "recursive", false);
                             var searchOption = SearchOption.TopDirectoryOnly;
 
@@ -625,7 +627,7 @@ namespace ReleaseBuilder
 
                             var appFile = FindTool(app);
                             if (appFile == null)
-                                appFile = fexec.FindExePath(app);
+                                appFile = PathFinder.FindExePath(app);
                             if (appFile == null)
                                 LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "Cannot locate {0}", app);
                             else
@@ -645,7 +647,7 @@ namespace ReleaseBuilder
 
         private string GetFilenameFromNode(string path, string? newPathAttribute, XElement actionNode)
         {
-            var file = expand_vars(GetAttribute<string>(actionNode, "file"));
+            var file = expand_vars(GetFilePathAttribute(actionNode, "file"));
             var filePath = PathFinder.FindFile(file, new[] {
                                         new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
@@ -711,6 +713,15 @@ namespace ReleaseBuilder
             else
                 return default(T);
         }
+        //
+        private string GetFilePathAttribute(XElement node, string v)
+        {
+            var val = GetAttribute(node, v, "");
+            if (val != "")
+                return val.Replace("\\", "/");
+            else
+                return default;
+        }
 
         public static bool IsParameterInvalid(string error, string value, Func<string, bool> invalid)
         {
@@ -730,19 +741,24 @@ namespace ReleaseBuilder
             }
             return true;
         }
-        private string? FindTool(string? app)
+        public string? FindTool(string? appBase)
         {
-            var file = app;
-            var rv = PathFinder.FindFile(file,
-                                            new[] {
+            string? rv = null;
+            foreach (var file in PathFinder.GetApplicationTargets(appBase))
+            {
+                rv = PathFinder.FindFile(file,
+                                                new[] {
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
-                            });
-            if (rv == null)
-            {
-                rv = PathFinder.FindFile(file, ToolsDirectories.Select(xx => new List<string>(new[] { xx.FullName })).ToArray());
+                                });
+                if (rv == null)
+                {
+                    rv = PathFinder.FindFile(file, ToolsDirectories.Select(xx => new List<string>(new[] { xx.FullName })).ToArray());
+                }
+                if (rv != null && PathFinder.CanExecute(rv))
+                    return rv;
             }
-            return rv;
+            return null;
         }
 
         private string? AddFolder(int skipCount, string root, string? directory)

@@ -5,11 +5,8 @@ but this uses XML which permits a much more tightly defined data, validation etc
 
 ## Releasing release builder
 
-publish the project using the profile PublishToFolder.pubxml
+publish the project using the profile that is appropriate; output will be in publish\release\platform so then copy the files to wherever on your local machine.
 
-then copy the files to wherever on your local machine.
+e.g.
+copy /y I:\dev\ReleaseBuilder\publish\release
 
-cd C:\Users\richa\source\repos\my-tools\rtools\ReleaseBuilder\bin\Release\net7.0\publish
-copy /y * i:\apps\utils
-
-xcopy C:\Users\richa\source\repos\my-tools\rtools\ReleaseBuilder\bin\Release\net7.0\publish\ i:\apps\utils\

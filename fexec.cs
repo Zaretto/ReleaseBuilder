@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -97,33 +98,6 @@ namespace rjtool
                 return rv.ToString();
             }
 		}
-        /// <summary>
-        /// Expands environment variables and, if unqualified, locates the exe in the working directory
-        /// or the evironment's path.
-        /// </summary>
-        /// <param name="exe">The name of the executable file</param>
-        /// <returns>The fully-qualified path to the file</returns>
-        /// <exception cref="System.IO.FileNotFoundException">Raised when the exe was not found</exception>
-		/// http://csharptest.net/526/how-to-search-the-environments-path-for-an-exe-or-dll/index.html
-        public static string FindExePath(string exe)
-        {
-            exe = Environment.ExpandEnvironmentVariables(exe);
-            if (!File.Exists(exe))
-            {
-                if (Path.GetDirectoryName(exe) == String.Empty)
-                {
-                    foreach (string test in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(';'))
-                    {
-                        string path = test.Trim();
-                        if (!String.IsNullOrEmpty(path) && File.Exists(path = Path.Combine(path, exe)))
-                            return Path.GetFullPath(path);
-                    }
-                }
-				RLog.ErrorFormat("FindExePath: Could not locate {0}", exe);
-                throw new FileNotFoundException(exe);
-            }
-            return Path.GetFullPath(exe);
-        }
         public static void AddExePath(IEnumerable<DirectoryInfo> d)
         {
             var envPath = Environment.GetEnvironmentVariable("PATH");

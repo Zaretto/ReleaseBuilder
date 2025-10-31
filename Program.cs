@@ -70,6 +70,8 @@ namespace ReleaseBuilder
             try
             {
                 var rb = new ReleaseBuilder(root, xmlConfig, target, toolPaths, nobuild);
+                if (!rb.IsValid)
+                    return 0;
                 modules.ForEach(m => {rb.AddModule(m);});
                 rb.Build();
                 return rb.Process();
