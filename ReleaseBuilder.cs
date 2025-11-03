@@ -972,7 +972,11 @@ namespace ReleaseBuilder
             if (Info != null)
             {
                 addvar("GITVERSION.JSON", json);
-                addvar("VERSION", Info.NuGetVersionV2);
+                if (!string.IsNullOrEmpty(Info.NuGetVersionV2))
+                    addvar("VERSION", Info.NuGetVersionV2);
+                else 
+                    addvar("VERSION", Info.MajorMinorPatch);
+
                 var iv = new PackedIntegerVersion(Info);
                 addvar("IntSemVer", iv.Value);
                 var properties = from p in typeof(GitVersion).GetProperties()

@@ -41,7 +41,7 @@ namespace rjtool
 
         public static string? GetJsonForDirectory(string srcdir)
         {
-            var gst = fexec.executeCommand("gitversion.exe", "", srcdir, true, false, null);
+            var gst = fexec.executeCommand(PathFinder.FindExePath("dotnet-gitversion"), "", srcdir, true, false, null);
 			if (!string.IsNullOrEmpty(gst))
 			{
 				return gst;
