@@ -31,10 +31,11 @@ namespace ReleaseBuilder
         public Dictionary<string, PublishTarget> Targets { get; private set; } = new Dictionary<string, PublishTarget>();
         public string TargetName { get; private set; }
         public bool NoBuild { get; }
+        public bool UseShellExecute { get; }
         public Dictionary<string, bool> Modules { get; private set; } = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         public FileInfo? ConfigFile { get; }
 
-        public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild)
+        public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild, bool useShellExecute)
         {
             ToolsDirectories = new List<DirectoryInfo>();
             if (toolsdir != null)
@@ -50,6 +51,7 @@ namespace ReleaseBuilder
                 Root = Directory.GetCurrentDirectory();
 
             NoBuild = nobuild;
+            UseShellExecute = useShellExecute;
             if (target != null)
                 PublishType = target;
 
@@ -350,7 +352,7 @@ namespace ReleaseBuilder
                     var newRoot = new DirectoryInfo(fromPath);
                     Directory.SetCurrentDirectory(newRoot.FullName);
                     var newConfigFile = new FileInfo(fromFile);
-                    var rb = new ReleaseBuilder(newRoot, newConfigFile, PublishType, ToolsDirectories, noBuildAttribute);
+                    var rb = new ReleaseBuilder(newRoot, newConfigFile, PublishType, ToolsDirectories, noBuildAttribute, UseShellExecute);
                     rb.Build();
                     if (processAttribute)
                         rb.Process();
@@ -619,7 +621,9 @@ namespace ReleaseBuilder
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                      });
                             var args = GetAttribute(actionNode, "args", "");
-                            var logStdout = GetAttribute<bool>(actionNode, "log-stdout");
+
+                            if (actionNode.Attribute("log-stdout") != null)
+                                RLog.ErrorFormat("attribute log-stdout not supported, use --shell-exec on the command line");
 
                             var requiredExitCodes = GetAttributeAsArray(actionNode, "required-exit-codes", (av) => av.Split(',').Select(xx => int.Parse(xx)));
                             if (requiredExitCodes == null)
@@ -633,7 +637,7 @@ namespace ReleaseBuilder
                             else
                             {
                                 args = expand_vars(args);
-                                var msg = fexec.executeCommand(appFile, args, folder, true, logStdout, requiredExitCodes);
+                                var msg = fexec.executeCommand(appFile, args, folder, true, UseShellExecute, requiredExitCodes);
                                 RLog.TraceFormat(msg);
                             }
                             break;

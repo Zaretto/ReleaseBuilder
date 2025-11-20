@@ -16,19 +16,21 @@ namespace ReleaseBuilder
             var extraVerbose = options.GetSwitchArgument("verbose", 'v');
             var showHelp = options.GetSwitchArgument("help", 'h');
             var nobuild = options.GetSwitchArgument("nobuild", 'n');
+            var useShellExecute = options.GetSwitchArgument("shell-exec", 's');
             var toolPaths = new List<DirectoryInfo>();
             var modules = new List<string>();
 
             if (showHelp)
             {
                 RLog.InfoFormat("ReleaseBuilder ");
-                RLog.InfoFormat(" --(r)oot          Root folder");
-                RLog.InfoFormat(" --(c)onfig        ReleaseConfig.xml file");
-                RLog.InfoFormat(" --(m)odule        Add path to search for tools. Can occur multiple times.");
-                RLog.InfoFormat(" --(n)obuild       Do not build artefacts");
-                RLog.InfoFormat(" --(p) --toolsdir  Add path to search for tools. Can occur multiple times.");
-                RLog.InfoFormat(" --(t)arget        Target to build");
-                RLog.InfoFormat(" --(v)erbose       Increase verbosity. Can be used twice.");
+                RLog.InfoFormat(" --(r)oot             Root folder");
+                RLog.InfoFormat(" --(c)onfig           ReleaseConfig.xml file");
+                RLog.InfoFormat(" --(m)odule           Add path to search for tools. Can occur multiple times.");
+                RLog.InfoFormat(" --(n)obuild          Do not build artefacts");
+                RLog.InfoFormat(" --(p) --toolsdir     Add path to search for tools. Can occur multiple times.");
+                RLog.InfoFormat(" --(s)hell-exec       Use ShellExecute.");
+                RLog.InfoFormat(" --(t)arget           Target to build");
+                RLog.InfoFormat(" --(v)erbose          Increase verbosity. Can be used twice.");
                 return 0;
             }
             while (true)
@@ -69,7 +71,7 @@ namespace ReleaseBuilder
                 return -1;
             try
             {
-                var rb = new ReleaseBuilder(root, xmlConfig, target, toolPaths, nobuild);
+                var rb = new ReleaseBuilder(root, xmlConfig, target, toolPaths, nobuild, useShellExecute);
                 if (!rb.IsValid)
                     return 0;
                 modules.ForEach(m => {rb.AddModule(m);});

@@ -10,94 +10,114 @@ using System.Threading.Tasks;
 
 namespace rjtool
 {
-    public class fexec
+    public partial class fexec
     {
-		/// <summary>
-		/// Execute a process
-		/// </summary>
-		/// <param name="programFilePath">full path of app</param>
-		/// <param name="commandLineArgs">arguments to use</param>
-		/// <param name="workingDirectory">working directory</param>
-		/// <param name="wait">whether to wait or run async</param>
-		/// <param name="useShellExecute">if true will do via shell execute; output will be in a terminal window.</param>
-		/// <param name="requiredExitCodes">list of exit codes that mean success. If null or empty process exit code will not be checked.</param>
-		/// <returns></returns>
-		/// <exception cref="Exception"></exception>
-		public static string executeCommand(string programFilePath, string commandLineArgs, string workingDirectory, bool wait, bool useShellExecute, IEnumerable<int> requiredExitCodes)
-		{
-			Process myProcess = new Process();
+        /// <summary>
+        /// Execute a process
+        /// </summary>
+        /// <param name="programFilePath">full path of app</param>
+        /// <param name="commandLineArgs">arguments to use</param>
+        /// <param name="workingDirectory">working directory</param>
+        /// <param name="wait">whether to wait or run async</param>
+        /// <param name="useShellExecute">if true will do via shell execute; output will be in a terminal window.</param>
+        /// <param name="requiredExitCodes">list of exit codes that mean success. If null or empty process exit code will not be checked.</param>
+        /// <returns></returns>
+        /// <exception cref="Exception"></exception>
+        public static string executeCommand(
+            string programFilePath,
+            string commandLineArgs,
+            string workingDirectory,
+            bool wait,
+            bool useShellExecute,
+            IEnumerable<int> requiredExitCodes)
+        {
+            Process myProcess = new Process();
+            myProcess.StartInfo.WorkingDirectory = workingDirectory;
+            myProcess.StartInfo.FileName = programFilePath;
+            myProcess.StartInfo.Arguments = commandLineArgs;
+            myProcess.StartInfo.UseShellExecute = useShellExecute;
+            myProcess.StartInfo.CreateNoWindow = true;
+            myProcess.StartInfo.RedirectStandardOutput = !useShellExecute;
+            myProcess.StartInfo.RedirectStandardError = !useShellExecute;
 
-			myProcess.StartInfo.WorkingDirectory = workingDirectory;
-			myProcess.StartInfo.FileName = programFilePath;
-			myProcess.StartInfo.Arguments = commandLineArgs;
-			myProcess.StartInfo.UseShellExecute = useShellExecute;
-			myProcess.StartInfo.CreateNoWindow = true;
-			myProcess.StartInfo.RedirectStandardOutput = !useShellExecute;
-			myProcess.StartInfo.RedirectStandardError = !useShellExecute;
-			var v = myProcess.Start();
-			RLog.TraceFormat("Exec: {0} {1}", programFilePath, commandLineArgs);
-			if (useShellExecute)
-			{
-				myProcess.WaitForExit();
-                if (requiredExitCodes != null && requiredExitCodes.Any() && !requiredExitCodes.Contains(myProcess.ExitCode))
+            RLog.TraceFormat("Exec: {0} {1}", programFilePath, commandLineArgs);
+
+            if (useShellExecute)
+            {
+                myProcess.Start();
+                if (wait)
                 {
-                    throw new Exception(string.Format("Command {0} failed ",Path.GetFileName(programFilePath)));
+                    myProcess.WaitForExit();
+                    if (requiredExitCodes != null && requiredExitCodes.Any() && !requiredExitCodes.Contains(myProcess.ExitCode))
+                    {
+                        throw new Exception(string.Format("Command {0} failed", Path.GetFileName(programFilePath)));
+                    }
                 }
                 return "";
-			}
-			else
-			{
-				StreamReader sOut = myProcess.StandardOutput;
-				StreamReader sErr = myProcess.StandardError;
-				var rv = new StringBuilder();
-				try
-				{
-					string str;
-					// reading errors and output async...
-					var buffer = new char[100];
-					int l;
-					if (wait)
-					{
-						while ((l = sOut.Read(buffer, 0, buffer.Length)) > 0)
-						{
-							//logMessage(str + Environment.NewLine, true);
-							//Application.DoEvents();
-							var msg = new String(buffer, 0, l);
-
-							sOut.BaseStream.Flush();
-							if (useShellExecute)
-								Console.WriteLine(msg);
-							else
-								rv.Append(msg);
-
-							if (sOut.EndOfStream)
-								break;
-						}
-						while ((str = sErr.ReadLine()) != null && !sErr.EndOfStream)
-						{
-							if (useShellExecute)
-								Console.WriteLine(str);
-							else
-								rv.Append(str);
-							sErr.BaseStream.Flush();
-						}
-						myProcess.WaitForExit();
-
-						if (requiredExitCodes != null && requiredExitCodes.Any() && !requiredExitCodes.Contains(myProcess.ExitCode))
-						{
-							RLog.ErrorFormat(rv.ToString());
-							throw new Exception(String.Format("Command {0} {1} failed ", Path.GetFileName(programFilePath), commandLineArgs));
-						}
-					}
-				}
-				finally
-				{
-					sOut.Close();
-					sErr.Close();
-				}
-                return rv.ToString();
             }
-		}
+            else
+            {
+                var output = new StringBuilder();
+                var errors = new StringBuilder();
+                var outputSink = new OutputSink();
+
+                // Setup async output handlers
+                myProcess.OutputDataReceived += (sender, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        output.AppendLine(e.Data);
+                        outputSink.Write(e.Data, OutputSink.StreamType.StdOut);
+                    }
+                };
+
+                myProcess.ErrorDataReceived += (sender, e) =>
+                {
+                    if (e.Data != null)
+                    {
+                        errors.AppendLine(e.Data);
+                        outputSink.Write(e.Data, OutputSink.StreamType.StdErr);
+                    }
+                };
+
+                myProcess.Start();
+
+                // Begin async reading
+                myProcess.BeginOutputReadLine();
+                myProcess.BeginErrorReadLine();
+
+                if (wait)
+                {
+                    myProcess.WaitForExit();
+
+                    // Important: Wait for async event handlers to complete
+                    myProcess.WaitForExit();
+
+                    // Flush any remaining partial lines
+                    outputSink.Flush();
+
+                    if (requiredExitCodes != null && requiredExitCodes.Any() && !requiredExitCodes.Contains(myProcess.ExitCode))
+                    {
+                        var errorOutput = errors.ToString();
+                        if (!string.IsNullOrEmpty(errorOutput))
+                        {
+                            RLog.ErrorFormat(errorOutput);
+                        }
+                        throw new Exception(String.Format("Command {0} {1} failed", Path.GetFileName(programFilePath), commandLineArgs));
+                    }
+                }
+
+                // Combine output and errors
+                var result = output.ToString();
+                var errorText = errors.ToString();
+                if (!string.IsNullOrEmpty(errorText))
+                {
+                    result += errorText;
+                }
+
+                return result;
+            }
+        }
         public static void AddExePath(IEnumerable<DirectoryInfo> d)
         {
             var envPath = Environment.GetEnvironmentVariable("PATH");
