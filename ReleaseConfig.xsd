@@ -43,93 +43,122 @@
                   <xs:complexType>
                     <xs:simpleContent>
                       <xs:extension base="xs:string">
-                        <xs:attribute name="skip-directories-front" type="xs:unsignedByte"
-                          use="required" />
+                        <xs:attribute name="skip-directories-front" type="xs:int" use="optional" />
                       </xs:extension>
                     </xs:simpleContent>
                   </xs:complexType>
                 </xs:element>
-              <xs:element name="build" minOccurs="0" maxOccurs="unbounded">
-                <xs:complexType>
-                  <xs:sequence>
-                    <xs:choice maxOccurs="unbounded">
-                    <xs:element name="clean" minOccurs="0" maxOccurs="unbounded">
-                      <xs:complexType>
-                        <xs:attribute name="folder" type="xs:string" />
-                      </xs:complexType>
-                    </xs:element>
-                    <xs:element name="copy" minOccurs="0" maxOccurs="unbounded">
-                      <xs:complexType>
-                        <xs:sequence>
-                          <xs:element name="transform-content" minOccurs="0" maxOccurs="unbounded">
-                            <xs:complexType>
-                              <xs:attribute name="transform" type="xs:string" />
-                            </xs:complexType>
-                          </xs:element>
-                        </xs:sequence>
-                        <xs:attribute name="from" type="xs:string" />
-                        <xs:attribute name="to" type="xs:string" />
-                        <xs:attribute name="match" type="xs:string" />
-                        <xs:attribute name="name" type="xs:string" />
-                      </xs:complexType>
-                    </xs:element>
-                    <xs:element minOccurs="0" maxOccurs="unbounded" name="xml-edit">
-                      <xs:complexType>
-                        <xs:sequence>
-                          <xs:element minOccurs="0" maxOccurs="unbounded" name="node">
-                            <xs:complexType>
-                              <xs:attribute name="path" type="xs:string" use="optional" />
-                              <xs:attribute name="action" type="xs:string" use="optional" />
-                            </xs:complexType>
-                          </xs:element>
-                        </xs:sequence>
-                        <xs:attribute name="file" type="xs:string" use="optional" />
-                        <xs:attribute name="omit-declaration" type="xs:boolean" use="optional" />
-                      </xs:complexType>
-                    </xs:element>
-                    <xs:element name="exec" minOccurs="0" maxOccurs="unbounded">
-                      <xs:complexType>
-                        <xs:attribute name="app" type="xs:string" />
-                        <xs:attribute name="args" type="xs:string" />
-                        <xs:attribute name="folder" type="xs:string" />
-                        <xs:attribute name="log-stdout" type="xs:string" />
-                      </xs:complexType>
-                    </xs:element>
-                    <xs:element name="create" nillable="true" minOccurs="0" maxOccurs="unbounded">
-                      <xs:complexType>
-                        <xs:simpleContent>
-                          <xs:extension base="xs:string">
-                            <xs:attribute name="file" type="xs:string" />
-                          </xs:extension>
-                        </xs:simpleContent>
-                      </xs:complexType>
-                    </xs:element>
-                    </xs:choice>
-                  </xs:sequence>
-                </xs:complexType>
-              </xs:element>
-              <xs:element name="file" nillable="true" minOccurs="0" maxOccurs="unbounded">
-                <xs:complexType>
-                  <xs:simpleContent>
-                    <xs:extension base="xs:string">
-                      <xs:attribute name="folder" type="xs:string" />
-                      <xs:attribute name="newname" type="xs:string" />
-                      <xs:attribute name="skip-directories-front" type="xs:string" />
-                      <xs:attribute name="name" type="xs:string" />
-                    </xs:extension>
-                  </xs:simpleContent>
-                </xs:complexType>
-              </xs:element>
+                <xs:element name="build" minOccurs="0" maxOccurs="unbounded">
+                  <xs:complexType>
+                    <xs:sequence>
+                      <xs:choice maxOccurs="unbounded">
+                        <xs:element name="clean" minOccurs="0" maxOccurs="unbounded">
+                          <xs:complexType>
+                            <xs:attribute name="folder" type="xs:string" use="required" />
+                            <xs:attribute name="include-folders" type="xs:boolean" use="optional" />
+                            <xs:attribute name="match" type="xs:string" use="optional" />
+                          </xs:complexType>
+                        </xs:element>
+                        <xs:element name="copy" minOccurs="0" maxOccurs="unbounded">
+                          <xs:complexType>
+                            <xs:sequence>
+                              <xs:element name="transform-content" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                  <xs:attribute name="transform" type="xs:string" use="required" />
+                                </xs:complexType>
+                              </xs:element>
+                            </xs:sequence>
+                            <xs:attribute name="from" type="xs:string" use="required" />
+                            <xs:attribute name="to" type="xs:string" use="optional" />
+                            <xs:attribute name="match" type="xs:string" use="optional" />
+                            <xs:attribute name="name" type="xs:string" use="optional" />
+                            <xs:attribute name="recursive" type="xs:boolean" use="optional" />
+                            <xs:attribute name="transform" type="xs:string" use="optional" />
+                          </xs:complexType>
+                        </xs:element>
+                        <xs:element name="modify" minOccurs="0" maxOccurs="unbounded">
+                          <xs:complexType>
+                            <xs:sequence>
+                              <xs:element name="transform-content" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                  <xs:attribute name="transform" type="xs:string" use="required" />
+                                </xs:complexType>
+                              </xs:element>
+                            </xs:sequence>
+                            <xs:attribute name="file" type="xs:string" use="required" />
+                          </xs:complexType>
+                        </xs:element>
+                        <xs:element minOccurs="0" maxOccurs="unbounded" name="xml-edit">
+                          <xs:complexType>
+                            <xs:sequence>
+                              <xs:element minOccurs="0" maxOccurs="unbounded" name="node">
+                                <xs:complexType>
+                                  <xs:attribute name="path" type="xs:string" use="optional" />
+                                  <xs:attribute name="action" type="xs:string" use="optional" />
+                                </xs:complexType>
+                              </xs:element>
+                            </xs:sequence>
+                            <xs:attribute name="file" type="xs:string" use="optional" />
+                            <xs:attribute name="omit-declaration" type="xs:boolean" use="optional" />
+                          </xs:complexType>
+                        </xs:element>
+                        <xs:element name="exec" minOccurs="0" maxOccurs="unbounded">
+                          <xs:complexType>
+                            <xs:attribute name="app" type="xs:string" use="required" />
+                            <xs:attribute name="args" type="xs:string" use="optional" />
+                            <xs:attribute name="folder" type="xs:string" use="optional" />
+                            <xs:attribute name="required-exit-codes" type="xs:string" use="optional" />
+                          </xs:complexType>
+                        </xs:element>
+                        <xs:element name="create" nillable="true" minOccurs="0" maxOccurs="unbounded">
+                          <xs:complexType>
+                            <xs:simpleContent>
+                              <xs:extension base="xs:string">
+                                <xs:attribute name="file" type="xs:string" use="required" />
+                              </xs:extension>
+                            </xs:simpleContent>
+                          </xs:complexType>
+                        </xs:element>
+                        <xs:element name="release-builder" minOccurs="0" maxOccurs="unbounded">
+                          <xs:complexType>
+                            <xs:attribute name="name" type="xs:string" use="required" />
+                            <xs:attribute name="folder" type="xs:string" use="optional" />
+                            <xs:attribute name="process" type="xs:boolean" use="optional" />
+                            <xs:attribute name="file" type="xs:string" use="optional" />
+                            <xs:attribute name="nobuild" type="xs:boolean" use="optional" />
+                          </xs:complexType>
+                        </xs:element>
+                      </xs:choice>
+                    </xs:sequence>
+                    <xs:attribute name="folder" type="xs:string" use="optional" />
+                  </xs:complexType>
+                </xs:element>
+                <xs:element name="file" nillable="true" minOccurs="0" maxOccurs="unbounded">
+                  <xs:complexType>
+                    <xs:simpleContent>
+                      <xs:extension base="xs:string">
+                        <xs:attribute name="folder" type="xs:string" use="optional" />
+                        <xs:attribute name="newname" type="xs:string" use="optional" />
+                        <xs:attribute name="skip-directories-front" type="xs:int" use="optional" />
+                        <xs:attribute name="name" type="xs:string" use="optional" />
+                      </xs:extension>
+                    </xs:simpleContent>
+                  </xs:complexType>
+                </xs:element>
               </xs:choice>
             </xs:sequence>
-            <xs:attribute name="folder" type="xs:string" />
+            <xs:attribute name="folder" type="xs:string" use="optional" />
+            <xs:attribute name="active" type="xs:string" use="optional" />
           </xs:complexType>
         </xs:element>
         <xs:element name="Artefact" minOccurs="0" maxOccurs="unbounded">
           <xs:complexType>
-            <xs:attribute name="folder" type="xs:string" />
-            <xs:attribute name="directory" type="xs:string" />
-            <xs:attribute name="file" type="xs:string" />
+            <xs:attribute name="folder" type="xs:string" use="optional" />
+            <xs:attribute name="directory" type="xs:string" use="optional" />
+            <xs:attribute name="file" type="xs:string" use="optional" />
+            <xs:attribute name="root" type="xs:string" use="optional" />
+            <xs:attribute name="newname" type="xs:string" use="optional" />
+            <xs:attribute name="skip-directories-front" type="xs:int" use="optional" />
           </xs:complexType>
         </xs:element>
         <xs:element minOccurs="0" maxOccurs="unbounded" name="ReleaseBuilder">
@@ -138,6 +167,7 @@
             <xs:attribute name="folder" type="xs:string" use="optional" />
             <xs:attribute name="process" type="xs:boolean" use="optional" />
             <xs:attribute name="file" type="xs:string" use="optional" />
+            <xs:attribute name="nobuild" type="xs:boolean" use="optional" />
           </xs:complexType>
         </xs:element>
       </xs:sequence>
