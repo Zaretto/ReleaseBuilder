@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace rjtool
 {
-    public partial class fexec
+    public class fexec
     {
         /// <summary>
         /// Execute a process
@@ -40,8 +40,7 @@ namespace rjtool
             myProcess.StartInfo.RedirectStandardOutput = !useShellExecute;
             myProcess.StartInfo.RedirectStandardError = !useShellExecute;
 
-            RLog.TraceFormat("Exec: {0} {1}", programFilePath, commandLineArgs);
-
+            RLog.TraceFormat("Exec: in {0} {1} {2}", workingDirectory, programFilePath, commandLineArgs);
             if (useShellExecute)
             {
                 myProcess.Start();
