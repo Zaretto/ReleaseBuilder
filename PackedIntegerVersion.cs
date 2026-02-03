@@ -35,9 +35,11 @@ namespace ReleaseBuilder
             if (lpatch.HasValue)
                 patch = (int)lpatch.Value;
             // Ensure each part is within the range [0, 99]
-            if (major < 0 || major > 99 || minor < 0 || minor > 99 || patch < 0 || patch > 99)
+            if (major < 0 || major > 9999)
+                throw new ArgumentOutOfRangeException("PackVersion: Major must be in the range [0, 9999]");
+            if (minor < 0 || minor > 99 || patch < 0 || patch > 99)
             {
-                throw new ArgumentOutOfRangeException("Each part must be in the range [0, 99]");
+                throw new ArgumentOutOfRangeException("PackVersion: Minor and Patch must be in the range [0, 99]");
             }
             // Combine parts into a single integer
             Value = (major * MajorFactor) + (minor * MinorFactor) + patch;
