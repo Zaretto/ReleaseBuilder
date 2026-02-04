@@ -129,8 +129,8 @@ namespace ReleaseBuilder
                     var av = GetAttribute(node, "archive-version", "");
                     if (!string.IsNullOrEmpty(av))
                     {
-                        av = Transform(av, "");
-                        Targets[name.Value].Version = expand_vars(av);
+                        av = Transform(expand_vars(av), "");
+                        Targets[name.Value].Version = av;
                         addvar("TargetVersion", av);
                     }
                     var type = GetAttribute(node, "type", "zip");
@@ -139,7 +139,7 @@ namespace ReleaseBuilder
                     else if (type == "folder")
                         Targets[name.Value].Type = TargetTypeEnum.LocalFolder;
                     else
-                        RLog.ErrorFormat("Uknown target type {0}", type);
+                        RLog.ErrorFormat("Unknown target type {0}", type);
                     if (name.Value.Equals(target, StringComparison.InvariantCultureIgnoreCase))
                     {
                         addvar("TARGETPATH", Targets[name.Value].Path.FullName);
@@ -883,7 +883,7 @@ namespace ReleaseBuilder
                     //        break;
                     //    }
                     default:
-                        throw new Exception("Uknown transform " + method);
+                        throw new Exception("Unknown transform " + method);
                 }
             }
             return Transformation;
