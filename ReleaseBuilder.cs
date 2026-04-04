@@ -25,7 +25,8 @@ namespace ReleaseBuilder
         public List<Artefact> Artefacts = new List<Artefact>();
         public string PublishType = "live";
         public string Root;
-        private Dictionary<string, string> vars = new Dictionary<string, string>();
+        private VariableStore vars = new VariableStore();
+        private TransformEngine _transform;
         public bool IsValid => ConfigFile != null;
 
         public Dictionary<string, PublishTarget> Targets { get; private set; } = new Dictionary<string, PublishTarget>();
@@ -77,6 +78,7 @@ namespace ReleaseBuilder
             }
             else RLog.ErrorFormat("Could not locate config file");
             ConfigFile = configFile;
+            _transform = new TransformEngine(vars);
         }
         public bool Valid => ConfigFile != null && Built;
         private bool Built { get; set; }
@@ -125,11 +127,11 @@ namespace ReleaseBuilder
                         LogForNodeWithDetails(LogMessageLevel.Error, node, "Target Name missing");
                         continue;
                     }
-                    Targets[name.Value] = new PublishTarget(name.Value, expand_vars(node.Attribute("path")));
+                    Targets[name.Value] = new PublishTarget(name.Value, _transform.ExpandVars(node.Attribute("path")));
                     var av = GetAttribute(node, "archive-version", "");
                     if (!string.IsNullOrEmpty(av))
                     {
-                        av = Transform(expand_vars(av), "");
+                        av = _transform.Transform(_transform.ExpandVars(av), "");
                         Targets[name.Value].Version = av;
                         addvar("TargetVersion", av);
                     }
@@ -214,7 +216,7 @@ namespace ReleaseBuilder
                     {
                         if (!string.IsNullOrEmpty(artefactFolder))
                         {
-                            artefactFolder = expand_vars(artefactFolder);
+                            artefactFolder = _transform.ExpandVars(artefactFolder);
                             artefactFolder = PathFinder.FindDirectory(artefactFolder,
                              new[] {
                                         new List<string>(new []{Root}),
@@ -229,12 +231,12 @@ namespace ReleaseBuilder
                             {
                                 case "file":
                                     {
-                                        var file = expand_vars(child.Value);
+                                        var file = _transform.ExpandVars(child.Value);
                                         var fileFolder = GetAttribute(child, "folder", "");
-                                        var newname = expand_vars(GetAttribute(child, "newname", ""));
+                                        var newname = _transform.ExpandVars(GetAttribute(child, "newname", ""));
                                         if (fileFolder != "")
                                         {
-                                            var nfolder = PathFinder.FindDirectory(expand_vars(fileFolder),
+                                            var nfolder = PathFinder.FindDirectory(_transform.ExpandVars(fileFolder),
                                                  new[] {
                                         new List<string>(new []{artefactFolder}),
                                         new List<string>(new []{Root}),
@@ -247,7 +249,7 @@ namespace ReleaseBuilder
                                     }
                                     break;
                                 case "folder":
-                                    var folder = AddFolder(GetAttribute<int>(child, "skip-directories-front"), Root, expand_vars(child.Value));
+                                    var folder = AddFolder(GetAttribute<int>(child, "skip-directories-front"), Root, _transform.ExpandVars(child.Value));
                                     break;
                                 case "build":
                                     if (nobuild)
@@ -291,7 +293,7 @@ namespace ReleaseBuilder
             var whenAttribute = GetAttribute(node, "active", "");
             if (!string.IsNullOrEmpty(whenAttribute))
             {
-                if (Transform(whenAttribute, "") == "")
+                if (_transform.Transform(whenAttribute, "") == "")
                 {
                     LogForNodeWithDetails(LogMessageLevel.Trace, node, "Not processing node because of active attribute {0}", whenAttribute);
                     return false;
@@ -302,7 +304,7 @@ namespace ReleaseBuilder
 
         private void releaseBuilder(XElement node)
         {
-            var folderAttribute = expand_vars(GetAttribute(node, "folder", ""));
+            var folderAttribute = _transform.ExpandVars(GetAttribute(node, "folder", ""));
 
             var noBuildAttribute = GetAttribute(node, "nobuild", NoBuild);
             var processAttribute = GetAttribute(node, "process", false);
@@ -311,7 +313,7 @@ namespace ReleaseBuilder
                                         new List<string>(new []{Directory.GetCurrentDirectory()})
                     });
 
-            var fileAttribute = expand_vars(GetAttribute(node, "file", ""));
+            var fileAttribute = _transform.ExpandVars(GetAttribute(node, "file", ""));
             var nameAttribute = GetAttribute(node, "name", "");
             if (!string.IsNullOrEmpty(nameAttribute))
             {
@@ -391,7 +393,7 @@ namespace ReleaseBuilder
                             var cleanPattern = GetAttribute(actionNode, "match", "*.*");
                             if (CheckParamNotEmpty(cleanFolder, "Folder to clean required"))
                             {
-                                cleanFolder = PathFinder.FindDirectory(expand_vars(cleanFolder), new[] {
+                                cleanFolder = PathFinder.FindDirectory(_transform.ExpandVars(cleanFolder), new[] {
                                         new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
@@ -428,7 +430,7 @@ namespace ReleaseBuilder
                         {
                             string? file = GetFilenameFromNode(path, newPathAttribute, actionNode);
                             var text = actionNode.Value;
-                            text = expand_vars(text).ReplaceLineEndings("\n");
+                            text = _transform.ExpandVars(text).ReplaceLineEndings("\n");
                             File.WriteAllText(file, text);
                             break;
                         }
@@ -451,7 +453,7 @@ namespace ReleaseBuilder
                                                 var elements = xdoc.XPathSelectElements(pathSelector);
                                                 foreach (var element in elements)
                                                 {
-                                                    var nv = Transform(nodeAction, element.Value);
+                                                    var nv = _transform.Transform(nodeAction, element.Value);
                                                     if (nv != element.Value)
                                                     {
                                                         element.Value = nv;
@@ -490,14 +492,14 @@ namespace ReleaseBuilder
                             var searchOption = SearchOption.TopDirectoryOnly;
 
                             // if from points to a file then just copy that.
-                            var fromPath = PathFinder.FindFile(expand_vars(from), new[] {
+                            var fromPath = PathFinder.FindFile(_transform.ExpandVars(from), new[] {
                                         new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                      });
 
                             if (fromPath == null)
-                                fromPath = PathFinder.FindDirectory(expand_vars(from), new[] {
+                                fromPath = PathFinder.FindDirectory(_transform.ExpandVars(from), new[] {
                                         new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
@@ -515,7 +517,7 @@ namespace ReleaseBuilder
                             var transform = GetAttribute(actionNode, "transform", "");
                             var transformContents = actionNode.Elements("transform-content");
                             var match = GetAttribute(actionNode, "match", "*.*")!;
-                            var toPath = expand_vars(GetAttribute(actionNode, "to", ""));
+                            var toPath = _transform.ExpandVars(GetAttribute(actionNode, "to", ""));
                             if (!string.IsNullOrEmpty(toPath))
                             {
                                 toPath = Path.Combine(path, toPath);
@@ -559,18 +561,18 @@ namespace ReleaseBuilder
                                 }
                                 if (newName != "")
                                 {
-                                    newName = expand_vars(newName);
+                                    newName = _transform.ExpandVars(newName);
                                     if (copyList.Count() != 1)
                                         throw new Exception("Cannot use name attribute when copying multiple files");
                                     var destFile = Path.Combine(toPath, Path.GetFileName(newName));
 
-                                    destFile = Transform(transform, destFile);
+                                    destFile = _transform.Transform(transform, destFile);
                                     copyFile(fromPath, destFile, transformContents);
                                     RLog.TraceFormat("copied {0}", destFile);
                                 }
                                 else foreach (var file in copyList)
                                     {
-                                        var destFile = Transform(transform, Path.GetFileName(file));
+                                        var destFile = _transform.Transform(transform, Path.GetFileName(file));
                                         if (recursive)
                                         {
                                             var srcFolder = Path.GetDirectoryName(file.Substring(fromPath.Length).Trim("/\\".ToArray()));
@@ -586,7 +588,7 @@ namespace ReleaseBuilder
                         break;
                     case "modify":
                         {
-                            var from = expand_vars(GetAttribute<string>(actionNode, "file", ""));
+                            var from = _transform.ExpandVars(GetAttribute<string>(actionNode, "file", ""));
 
                             // if from points to a file then just copy that.
                             var fromPath = PathFinder.FindFile(from, new[] {
@@ -615,7 +617,7 @@ namespace ReleaseBuilder
                             if (string.IsNullOrEmpty(folder))
                                 folder = path;
                             else
-                                folder = PathFinder.FindDirectory(expand_vars(folder), new[] {
+                                folder = PathFinder.FindDirectory(_transform.ExpandVars(folder), new[] {
                                         new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
@@ -629,14 +631,14 @@ namespace ReleaseBuilder
                             if (requiredExitCodes == null)
                                 requiredExitCodes = new[] { 0 };
 
-                            var appFile = FindTool(app);
+                            var appFile = PathFinder.FindTool(app, Root, ToolsDirectories);
                             if (appFile == null)
                                 appFile = PathFinder.FindExePath(app);
                             if (appFile == null)
                                 LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "Cannot locate {0}", app);
                             else
                             {
-                                args = expand_vars(args);
+                                args = _transform.ExpandVars(args);
                                 var msg = fexec.executeCommand(appFile, args, folder, true, UseShellExecute, requiredExitCodes);
                                 RLog.TraceFormat(msg);
                             }
@@ -651,7 +653,7 @@ namespace ReleaseBuilder
 
         private string GetFilenameFromNode(string path, string? newPathAttribute, XElement actionNode)
         {
-            var file = expand_vars(GetFilePathAttribute(actionNode, "file"));
+            var file = _transform.ExpandVars(GetFilePathAttribute(actionNode, "file"));
             var filePath = PathFinder.FindFile(file, new[] {
                                         new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
@@ -684,7 +686,7 @@ namespace ReleaseBuilder
                 foreach (XElement transformNode in transforms)
                 {
                     var transform = transformNode.Attribute("transform");
-                    contents = Transform(transform.Value, contents);
+                    contents = _transform.Transform(transform.Value, contents);
                 }
                 if (originalContents != contents)
                 {
@@ -727,15 +729,6 @@ namespace ReleaseBuilder
                 return default;
         }
 
-        public static bool IsParameterInvalid(string error, string value, Func<string, bool> invalid)
-        {
-            if (invalid(value))
-            {
-                RLog.ErrorFormat(error, value);
-                return true;
-            }
-            return false;
-        }
         private static bool CheckParamNotEmpty(string? param, string errorMessage)
         {
             if (String.IsNullOrEmpty(param))
@@ -745,35 +738,17 @@ namespace ReleaseBuilder
             }
             return true;
         }
-        public string? FindTool(string? appBase)
-        {
-            string? rv = null;
-            foreach (var file in PathFinder.GetApplicationTargets(appBase))
-            {
-                rv = PathFinder.FindFile(file,
-                                                new[] {
-                                        new List<string>(new []{Root}),
-                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
-                                });
-                if (rv == null)
-                {
-                    rv = PathFinder.FindFile(file, ToolsDirectories.Select(xx => new List<string>(new[] { xx.FullName })).ToArray());
-                }
-                if (rv != null && PathFinder.CanExecute(rv))
-                    return rv;
-            }
-            return null;
-        }
+
 
         private string? AddFolder(int skipCount, string root, string? directory)
         {
             if (directory != null)
             {
                 if (directory.Contains("*"))
-                    Artefacts.Add(new Artefact(skipCount, root, expand_vars(directory)));
+                    Artefacts.Add(new Artefact(skipCount, root, _transform.ExpandVars(directory)));
                 else
                 {
-                    directory = PathFinder.FindDirectory(expand_vars(directory),
+                    directory = PathFinder.FindDirectory(_transform.ExpandVars(directory),
                          new[] {
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
@@ -797,7 +772,7 @@ namespace ReleaseBuilder
             {
 
                 if (file.Contains("*"))
-                    Artefacts.Add(new Artefact(skipCount, root, expand_vars(file)));
+                    Artefacts.Add(new Artefact(skipCount, root, _transform.ExpandVars(file)));
                 else
                 {
                     file = PathFinder.FindFile(file,
@@ -816,102 +791,6 @@ namespace ReleaseBuilder
             }
 
             return file;
-        }
-
-        private void argCheck(string[] parts, int requiredLength, string transformation)
-        {
-            if (parts.Length != requiredLength)
-                throw new Exception(String.Format("ERROR: Transform: {0} {1} arguments required; [{2}]", transformation, requiredLength, string.Join(",", parts)));
-        }
-
-        private string Transform(string? Transformation, string v)
-        {
-            if (string.IsNullOrEmpty(Transformation))
-                return v;
-            var parts = Transformation.Split(',');
-            if (parts.Length >= 1)
-            {
-                var method = parts[0];
-                switch (method.ToLower())
-                {
-                    case "set":
-                        return expand_vars(parts[1]);
-                    case "getversion":
-                        {
-                            argCheck(parts, 2, Transformation);
-                            v = expand_vars(parts[1]);
-                            var vp = v.Split('\\');
-                            v = vp.Last();
-                            var rv = Regex.Match(v, @"\d+.+\d");
-                            if (rv != null)
-                                return rv.Value;
-                            return Transformation;
-                        }
-
-
-                    case "replace":
-                        {
-                            argCheck(parts, 3, Transformation);
-                            var s1 = expand_vars(parts[1]);
-                            var s2 = expand_vars(parts[2]);
-                            if (s1 == s2)
-                                return v;
-                            return v.Replace(s1, s2);
-                        }
-                    case "regex-replace":
-                        {
-                            argCheck(parts, 3, Transformation);
-                            var s1 = expand_vars(parts[1]);
-                            var s2 = expand_vars(parts[2]);
-                            return Regex.Replace(v, s1, s2);
-                        }
-                    case "when":
-                        {
-                            argCheck(parts, 4, Transformation);
-                            var s1 = expand_vars(parts[1]);
-                            var cond = parts[2];
-                            var s2 = expand_vars(parts[3]);
-                            return compare(s1, cond, s2);
-                        }
-                    //case "eval":
-                    //    {
-                    //        if (string.IsNullOrEmpty(v))
-                    //            return v;
-                    //        argCheck(parts, 2, Transformation);
-                    //        v = eval.Evaluate(parts[1].Replace("v", v)).ToString();
-
-                    //        break;
-                    //    }
-                    default:
-                        throw new Exception("Unknown transform " + method);
-                }
-            }
-            return Transformation;
-        }
-
-        private string compare(string? s1, string cond, string? s2)
-        {
-            var result = false;
-            switch (cond.ToLower())
-            {
-                case "eq":
-                case "==":
-                case "=":
-                    result = s1 == s2;
-                    break;
-
-                case "ne":
-                case "!=":
-                case "<>":
-                    result = s1 != s2;
-                    break;
-                default:
-                    RLog.ErrorFormat("Unknown comparison {0}", cond);
-                    break;
-            }
-            if (result)
-                return "1";
-            return "";
         }
 
         private void LogForNodeWithDetails(LogMessageLevel level, XElement node, string message, params object[] args)
@@ -998,51 +877,8 @@ namespace ReleaseBuilder
             }
         }
 
-        private void addvar(string k, string v)
-        {
-            if (string.IsNullOrEmpty(v))
-                RLog.ErrorFormat("{0} is null or empty", k);
-            RLog.DebugFormat("{0}={1}", k, v);
-            vars[k] = v;
-        }
-
-        private void addvar(string k, long? v)
-        {
-            if (v.HasValue)
-                vars[k] = v.Value.ToString();
-        }
-        public string? expand_vars(XAttribute? att)
-        {
-            if (att == null)
-                return "";
-            return expand_vars(att.Value);
-        }
-        public string? expand_vars(string rv)
-        {
-            if (rv == null)
-                return "";
-
-            rv = Regex.Replace(rv, @"\$(\w+)", match =>
-            {
-                string variable = match.Groups[1].Value;
-                var rv = Environment.GetEnvironmentVariable(variable);
-                if (rv == null)
-                    throw new Exception("Environment variable not found: " + variable);
-                return rv;
-            });
-            rv = Regex.Replace(rv, "\\~(.*?)\\~", match =>
-            {
-                string variable = match.Groups[1].Value;
-                if (vars.ContainsKey(variable))
-                    return vars[variable];
-                else
-                    throw new Exception("Variable not found: " + variable);
-            });
-
-            return rv;
-        }
-
-
+        private void addvar(string k, string v) => vars.Set(k, v);
+        private void addvar(string k, long? v) => vars.Set(k, v);
         public int Process()
         {
             if (Targets.Any())

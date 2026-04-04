@@ -178,5 +178,25 @@ namespace ReleaseBuilder
             // On Unix, check if file has any execute permission bit set
             return result && IsUnixExecutable(path);
         }
+
+        public static string? FindTool(string? appBase, string root, IEnumerable<DirectoryInfo> toolsDirectories)
+        {
+            if (appBase == null) return null;
+            string? rv = null;
+            foreach (var file in GetApplicationTargets(appBase))
+            {
+                rv = FindFile(file, new[] {
+                    new List<string>(new[] { root }),
+                    new List<string>(new[] { Directory.GetCurrentDirectory() }),
+                });
+                if (rv == null)
+                {
+                    rv = FindFile(file, toolsDirectories.Select(xx => new List<string>(new[] { xx.FullName })).ToArray());
+                }
+                if (rv != null && CanExecute(rv))
+                    return rv;
+            }
+            return null;
+        }
     }
 }
