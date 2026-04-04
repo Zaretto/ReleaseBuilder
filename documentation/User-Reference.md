@@ -832,11 +832,13 @@ Alternative syntax for defining individual artifacts.
 
 ### Element: ReleaseBuilder
 
-**Parent:** `<ReleaseConfig>`
+**Parent:** `<ReleaseConfig>` or `<build>`
 **Occurrence:** 0 or more
 **Content:** Empty
 
 Recursively invokes ReleaseBuilder on a nested configuration, enabling modular builds.
+
+> **Note:** Inside `<build>` sections, the lowercase form `<release-builder>` is also accepted.
 
 **Syntax:**
 ```xml
@@ -1203,8 +1205,8 @@ These variables are automatically available:
 | `PUBLISHROOT` | Root directory | `/home/user/project` |
 | `SemVer` | Semantic version from GitVersion | `1.2.3` |
 | `VERSION` | Alias for SemVer | `1.2.3` |
-| `TARGETPATH` | Active target's path | `/releases` |
-| `BuildDate` | Current date/time | System date/time |
+| `TARGETPATH` | Active target's output path | `/releases` |
+| `TargetVersion` | Version string for the active target (from `archive-version`) | `1.2.3` |
 | `GITVERSION.JSON` | Full GitVersion JSON | `{"SemVer":"1.2.3",...}` |
 
 **GitVersion Variables:**
@@ -1273,7 +1275,7 @@ All string properties from GitVersion JSON become variables:
 | Variable | Description |
 |----------|-------------|
 | `GITVERSION.JSON` | Complete JSON output from GitVersion (not parsed) |
-| `IntSemVer` | Packed integer version (internal use) |
+| `IntSemVer` | Packed integer version: `major * 10000 + minor * 100 + patch`. Supports CalVer (major up to 9999, e.g. year-based versioning). |
 
 **Example GitVersion JSON:**
 ```json
@@ -1739,6 +1741,58 @@ Choose the approach based on your needs:
 
 ---
 
+### Action: modify
+
+Modifies a file in-place using transform functions. This is the counterpart to `copy` with `transform-content` — use `modify` when you want to edit an existing file rather than creating a copy.
+
+**Syntax:**
+```xml
+<modify file="path/to/file">
+  <transform-content transform="transformation_expression" />
+</modify>
+```
+
+##### file (required)
+
+**Type:** String
+**Purpose:** Path to the file to modify (supports variable expansion)
+
+Path resolution follows the standard search order: artefacts folder, root directory, current directory.
+
+##### transform-content (child elements)
+
+Each `<transform-content>` element applies a transform function to the entire file contents. Multiple transforms are applied sequentially. The file is only rewritten if the content actually changed.
+
+**Examples:**
+
+**Example 1: Replace version placeholder**
+```xml
+<modify file="src/AssemblyInfo.cs">
+  <transform-content transform="replace,0.0.0.0,~SemVer~.0" />
+</modify>
+```
+
+**Example 2: Multiple transforms**
+```xml
+<modify file="config/app.conf">
+  <transform-content transform="replace,__VERSION__,~SemVer~" />
+  <transform-content transform="replace,__ENV__,~TYPE~" />
+</modify>
+```
+
+**Example 3: Regex replacement**
+```xml
+<modify file="package.json">
+  <transform-content transform="regex-replace,&quot;version&quot;:\s*&quot;[^&quot;]+&quot;,&quot;version&quot;: &quot;~SemVer~&quot;" />
+</modify>
+```
+
+**When to use modify vs copy with transform-content:**
+- Use `modify` when the file already exists at its final location and you want to edit it in-place
+- Use `copy` with `transform-content` when you need to copy the file to a different location and transform during the copy
+
+---
+
 ### Action: exec
 
 Executes an external process.
@@ -1748,7 +1802,7 @@ Executes an external process.
 <exec app="executable"
       args="arguments"
       folder="working_directory"
-      log-stdout="true|false" />
+      required-exit-codes="0,1" />
 ```
 
 **Attributes:**
@@ -1777,13 +1831,15 @@ Supports variable expansion.
 **Default:** Current directory
 **Purpose:** Working directory for execution
 
-##### log-stdout (optional)
+##### required-exit-codes (optional)
 
-**Type:** Boolean
-**Default:** `false`
-**Purpose:** Log standard output
+**Type:** Comma-separated integers
+**Default:** `0`
+**Purpose:** Exit codes that indicate success
 
-When `true` or when `-vv` is used, stdout is logged at Info level.
+By default only exit code 0 is considered success. Some tools use non-zero exit codes
+for non-error conditions (e.g. robocopy uses 1 for "files copied"). Use this attribute
+to specify which exit codes should be treated as success.
 
 **Examples:**
 
@@ -1802,13 +1858,12 @@ When `true` or when `-vv` is used, stdout is logged at Info level.
 **Example 3: With environment variable**
 ```xml
 <exec app="dotnet"
-      args="nuget push package.~VERSION~.nupkg --api-key $NUGET_API_KEY"
-      log-stdout="true" />
+      args="nuget push package.~VERSION~.nupkg --api-key $NUGET_API_KEY" />
 ```
 
 **Example 4: npm build**
 ```xml
-<exec app="npm" args="run build" folder="frontend" log-stdout="true" />
+<exec app="npm" args="run build" folder="frontend" />
 ```
 
 **Example 5: Custom script**
@@ -1816,11 +1871,16 @@ When `true` or when `-vv` is used, stdout is logged at Info level.
 <exec app="bash" args="build-assets.sh" folder="scripts" />
 ```
 
+**Example 6: Accept multiple exit codes**
+```xml
+<exec app="robocopy" args="src dest /MIR" required-exit-codes="0,1,2,3" />
+```
+
 **Behavior:**
 - Waits for process to complete
-- Non-zero exit code causes build failure
-- stderr is always captured
-- stdout captured only if `log-stdout="true"` or `-vv` flag used
+- Exit code is checked against `required-exit-codes` (default: 0); non-matching codes cause build failure
+- stdout and stderr are captured and logged at Debug level (visible with `-vv`)
+- Use the `--shell-exec` command-line option to run processes in a visible terminal window instead
 - Environment variables inherited from parent process
 
 ---
@@ -1882,7 +1942,7 @@ Level=~LOG_LEVEL~
   "version": "~SemVer~",
   "environment": "~TYPE~",
   "apiUrl": "~API_URL~",
-  "buildDate": "~BuildDate~"
+  "branch": "~BranchName~"
 }
 </create>
 ```
@@ -1892,7 +1952,7 @@ Level=~LOG_LEVEL~
 <create file="src/version.ts">
 export const version = {
   number: '~SemVer~',
-  buildDate: '~BuildDate~',
+  branch: '~BranchName~',
   gitSha: '~Sha~'
 };
 </create>

@@ -179,6 +179,23 @@ ReleaseBuilder runs on:
 - Git
 - GitVersion.Tool (`dotnet tool install --global GitVersion.Tool`)
 
+## Testing
+
+The solution includes an xUnit test project covering the core logic:
+
+```bash
+dotnet test
+```
+
+The `ReleaseBuilder.Tests` project tests the following components:
+- **TransformEngine** — transform expressions (set, replace, regex-replace, getversion, when), comparison operators, variable expansion
+- **VariableStore** — variable storage, retrieval, case-insensitive lookup
+- **PackedIntegerVersion** — version packing/unpacking, CalVer support, scale factors
+- **OptionsParser** — command-line argument parsing
+- **FileDetails** — archive name generation, path manipulation
+- **OutputSink** — process output line buffering and thread safety
+- **Artefact** — artifact type detection, equality, path normalisation
+
 ## License
 
 This project is licensed under the GNU General Public License v2.0 (GPL-2.0).

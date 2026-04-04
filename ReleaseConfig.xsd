@@ -121,7 +121,7 @@
                         </xs:element>
                         <xs:element name="release-builder" minOccurs="0" maxOccurs="unbounded">
                           <xs:complexType>
-                            <xs:attribute name="name" type="xs:string" use="required" />
+                            <xs:attribute name="name" type="xs:string" use="optional" />
                             <xs:attribute name="folder" type="xs:string" use="optional" />
                             <xs:attribute name="process" type="xs:boolean" use="optional" />
                             <xs:attribute name="file" type="xs:string" use="optional" />
@@ -163,7 +163,7 @@
         </xs:element>
         <xs:element minOccurs="0" maxOccurs="unbounded" name="ReleaseBuilder">
           <xs:complexType>
-            <xs:attribute name="name" type="xs:string" use="required" />
+            <xs:attribute name="name" type="xs:string" use="optional" />
             <xs:attribute name="folder" type="xs:string" use="optional" />
             <xs:attribute name="process" type="xs:boolean" use="optional" />
             <xs:attribute name="file" type="xs:string" use="optional" />

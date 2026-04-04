@@ -337,6 +337,8 @@ Alternative element for defining individual artifacts (legacy/alternative syntax
 
 Recursively invokes ReleaseBuilder on a nested configuration file, enabling modular builds.
 
+> **Note:** Inside `<build>` sections, the lowercase form `<release-builder>` is also accepted. At the root level of `<ReleaseConfig>`, use `<ReleaseBuilder>`.
+
 **Syntax:**
 ```xml
 <ReleaseBuilder name="module_name"
@@ -847,6 +849,48 @@ For .NET applications, you can either use the `dotnet publish` output folder dir
 
 ---
 
+### modify
+
+Modifies a file in-place using transform functions. Unlike `copy` with `transform-content`, this edits the file where it is rather than copying it to a new location.
+
+**Syntax:**
+```xml
+<modify file="path/to/file">
+  <transform-content transform="replace,search,replacement" />
+  <transform-content transform="regex-replace,pattern,replacement" />
+</modify>
+```
+
+**Attributes:**
+
+| Attribute | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `file` | Yes | - | Path to the file to modify |
+
+**Child Elements:**
+
+| Element | Description |
+|---------|-------------|
+| `transform-content` | Applies a transform function to the file contents. Multiple allowed. |
+
+Transforms are applied sequentially. The file is only written back if the content changed.
+
+**Examples:**
+```xml
+<!-- Update a version string in a file -->
+<modify file="src/version.h">
+  <transform-content transform="replace,0.0.0,~SemVer~" />
+</modify>
+
+<!-- Fix line endings and replace a placeholder -->
+<modify file="config/settings.ini">
+  <transform-content transform="replace,${PLACEHOLDER},~TYPE~" />
+  <transform-content transform="regex-replace,\r\n,\n" />
+</modify>
+```
+
+---
+
 ### exec
 
 Executes an external process.
@@ -856,7 +900,7 @@ Executes an external process.
 <exec app="executable"
       args="arguments"
       folder="working_directory"
-      log-stdout="true|false" />
+      required-exit-codes="0,1" />
 ```
 
 **Attributes:**
@@ -866,12 +910,14 @@ Executes an external process.
 | `app` | Yes | - | Executable name or path |
 | `args` | No | - | Command-line arguments |
 | `folder` | No | Current | Working directory |
-| `log-stdout` | No | `false` | Log stdout output at Info level |
+| `required-exit-codes` | No | `0` | Comma-separated list of exit codes that indicate success |
 
 The tool searches for executables in:
 1. Directories specified with `--toolsdir`
 2. Application base directory
 3. System PATH
+
+Process output (stdout and stderr) is captured and logged at Debug level. Use `-vv` to see it, or use the `--shell-exec` command-line option to run processes in a visible terminal window.
 
 **Examples:**
 ```xml
@@ -886,14 +932,15 @@ The tool searches for executables in:
 <!-- Execute with environment variable -->
 <exec app="dotnet.exe"
       args="nuget push package.~SemVer~.nupkg --api-key $NUGET_API_KEY --source https://api.nuget.org/v3/index.json"
-      folder="bin/release"
-      log-stdout="true" />
+      folder="bin/release" />
 
 <!-- Angular build -->
 <exec app="node.exe"
       args="node_modules\@angular\cli\bin\ng build --configuration production"
-      folder="~PUBLISHROOT~"
-      log-stdout="true" />
+      folder="~PUBLISHROOT~" />
+
+<!-- Accept multiple exit codes -->
+<exec app="robocopy" args="src dest /MIR" required-exit-codes="0,1,2,3" />
 ```
 
 ---
@@ -931,7 +978,6 @@ Creates a text file with specified content.
 [app]
 version=~VERSION~
 environment=~TYPE~
-build_date=~BuildDate~
 </create>
 ```
 
@@ -1139,8 +1185,7 @@ Conditional transformation (returns empty string if condition fails).
       <!-- Build Angular app -->
       <exec app="node.exe"
             args="node_modules\@angular\cli\bin\ng build --configuration production"
-            folder="~PUBLISHROOT~"
-            log-stdout="true" />
+            folder="~PUBLISHROOT~" />
     </build>
     <folder>dist</folder>
   </Artefacts>
@@ -1236,7 +1281,7 @@ Module config (`Dashboard/ReleaseConfig.xml`):
 Version: ~SemVer~
 Build: ~BUILD_VER~
 Target: ~TYPE~
-Date: ~BuildDate~
+Branch: ~BranchName~
       </create>
     </build>
 

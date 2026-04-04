@@ -657,7 +657,7 @@ This approach works well when:
       <create file="publish/version.txt">
 Version: ~SemVer~
 Environment: ~ENV~
-Build Date: ~BuildDate~
+Branch: ~BranchName~
       </create>
     </build>
 
@@ -696,7 +696,7 @@ ReleaseBuilder --target production
       <create file="src/app/version.ts">
 export const version = {
   number: '~SemVer~',
-  buildDate: '~BuildDate~',
+  branch: '~BranchName~',
   target: '~TYPE~'
 };
       </create>
@@ -707,7 +707,7 @@ export const version = {
             name="environment.ts" />
 
       <!-- Build Angular app -->
-      <exec app="npm" args="run build -- --configuration production" log-stdout="true" />
+      <exec app="npm" args="run build -- --configuration production" />
     </build>
 
     <folder>dist/angular-app</folder>
