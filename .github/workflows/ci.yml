@@ -92,7 +92,7 @@ jobs:
 
       - name: Publish
         run: >
-          dotnet publish -c Release
+          dotnet publish ReleaseBuilder.csproj -c Release
           -r ${{ matrix.rid }}
           --no-self-contained
           -p:PublishSingleFile=true
