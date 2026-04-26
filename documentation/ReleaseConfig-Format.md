@@ -943,6 +943,10 @@ Process output (stdout and stderr) is captured and logged at Debug level. Use `-
 <exec app="robocopy" args="src dest /MIR" required-exit-codes="0,1,2,3" />
 ```
 
+**Exit code interaction:**
+
+When an `<exec>` command returns a code not in `required-exit-codes`, the error is logged via `RLog.ErrorFormat` and increments the error counter. ReleaseBuilder continues processing subsequent actions (continue-and-report mode) and the overall exit code will be `2` (BuildError). Use `required-exit-codes` to allow non-zero success codes from tools like robocopy that use exit codes for status rather than errors.
+
 ---
 
 ### create

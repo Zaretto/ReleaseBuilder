@@ -96,5 +96,37 @@ namespace ReleaseBuilder.Tests
             Assert.True(parser.GetSwitchArgument("verbose", 'v'));
             Assert.False(parser.IsInvalid());
         }
+
+        [Fact]
+        public void DryRun_LongForm()
+        {
+            var parser = new OptionsParser(new[] { "--dry-run" });
+            Assert.True(parser.GetSwitchArgument("dry-run", 'd'));
+            Assert.False(parser.IsInvalid());
+        }
+
+        [Fact]
+        public void DryRun_ShortForm()
+        {
+            var parser = new OptionsParser(new[] { "-d" });
+            Assert.True(parser.GetSwitchArgument("dry-run", 'd'));
+            Assert.False(parser.IsInvalid());
+        }
+
+        [Fact]
+        public void OutputManifest_LongForm()
+        {
+            var parser = new OptionsParser(new[] { "--output-manifest", "manifest.json" });
+            Assert.Equal("manifest.json", parser.GetStringArgument("output-manifest", 'o'));
+            Assert.False(parser.IsInvalid());
+        }
+
+        [Fact]
+        public void OutputManifest_ShortForm()
+        {
+            var parser = new OptionsParser(new[] { "-o", "-" });
+            Assert.Equal("-", parser.GetStringArgument("output-manifest", 'o'));
+            Assert.False(parser.IsInvalid());
+        }
     }
 }

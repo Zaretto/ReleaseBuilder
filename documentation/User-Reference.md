@@ -380,6 +380,96 @@ ReleaseBuilder -vv                   # Debug level (shorthand)
 
 ---
 
+#### -d, --dry-run
+
+**Type:** Boolean flag
+**Required:** No
+**Default:** false
+
+Parses and validates the configuration, expands variables, and reports what would happen — without executing any build actions or creating artefacts.
+
+**Examples:**
+```bash
+ReleaseBuilder --dry-run -c ReleaseConfig.xml
+ReleaseBuilder -d --target staging
+```
+
+**What dry-run does:**
+- Parses the XML configuration
+- Resolves all variables
+- Validates path existence
+- Reports each action it would take (prefixed with `[dry-run]`)
+- Collects and reports the artefact list
+
+**What dry-run skips:**
+- File deletion (`clean`)
+- File creation (`create`)
+- XML editing (`xml-edit`)
+- File copying (`copy`, `modify`)
+- External process execution (`exec`)
+- Archive creation and file copying in `Process()`
+
+**Use Cases:**
+- Validate configuration changes before a real build
+- CI/CD pull request checks that verify config is valid
+- Debugging build configurations safely
+
+```bash
+# Validate config without any side effects
+release-builder --dry-run --config ReleaseConfig.xml --target production
+```
+
+---
+
+#### -o, --output-manifest <file>
+
+**Type:** File path string
+**Required:** No
+**Default:** None (no manifest written)
+
+Writes a JSON manifest of build outputs after `Process()` completes. Use `-` to write to stdout.
+
+**Examples:**
+```bash
+release-builder -c ReleaseConfig.xml -o manifest.json
+release-builder -c ReleaseConfig.xml -o -       # stdout
+```
+
+**Manifest JSON structure:**
+```json
+{
+  "TargetName": "MyApp",
+  "TargetType": "ZipFile",
+  "Version": "1.2.3",
+  "OutputPath": "/releases",
+  "ErrorCount": 0,
+  "Timestamp": "2026-04-26T12:00:00+00:00",
+  "Artefacts": [
+    {
+      "Path": "/releases/MyApp-live-1.2.3.zip",
+      "ArchiveName": "MyApp-live-1.2.3.zip",
+      "SizeBytes": 98765
+    }
+  ]
+}
+```
+
+**Fields:**
+- `TargetName` — value of `<Name>` in the config
+- `TargetType` — `ZipFile` or `LocalFolder`
+- `Version` — resolved `~SemVer~` at time of build
+- `OutputPath` — resolved output directory
+- `ErrorCount` — number of errors logged during the build
+- `Timestamp` — UTC time when `Process()` ran
+- `Artefacts` — list of output files produced
+
+**Use Cases:**
+- Feed artefact paths to subsequent pipeline steps
+- Audit what was produced by a build
+- Upload specific output files from a CI job
+
+---
+
 #### -h, --help
 
 **Type:** Boolean flag
@@ -419,7 +509,10 @@ else:
 | Code | Meaning | Description |
 |------|---------|-------------|
 | 0 | Success | Build completed successfully |
-| -1 | Error | Build failed or invalid arguments |
+| 1 | ConfigError | Configuration file not found or not valid |
+| 2 | BuildError | Build actions failed (errors were logged) |
+| 3 | ArtefactError | Artefact processing failed |
+| 4 | InvalidArguments | Unrecognised command-line arguments |
 
 **Checking Exit Code:**
 
@@ -2365,34 +2458,82 @@ Removes leading path components from output.
 
 ## Exit Codes
 
-### Success
+| Code | Constant | Meaning |
+|------|----------|---------|
+| 0 | `Success` | Build completed with no errors |
+| 1 | `ConfigError` | Configuration file not found |
+| 2 | `BuildError` | Build actions failed — one or more errors were logged |
+| 3 | `ArtefactError` | Artefact processing failed |
+| 4 | `InvalidArguments` | Unrecognised command-line arguments |
 
-**Code:** 0
-
-Build completed successfully. All actions executed without errors.
-
-### Error
-
-**Code:** -1
-
-Build failed. Possible causes:
-- Configuration file not found
-- Invalid XML in configuration
-- Required attribute missing
-- File/folder not found
-- External process returned non-zero exit code
-- Permission error
-- Invalid command-line arguments
-
-### Error Handling
-
-ReleaseBuilder stops on first error and returns immediately with code -1.
+ReleaseBuilder uses continue-and-report mode: it logs all errors and returns a non-zero exit code at the end, rather than stopping at the first error. This lets you see all problems in one run.
 
 **Viewing Errors:**
 Use `-v` or `-vv` for detailed error information:
 
 ```bash
-ReleaseBuilder --target production -vv
+release-builder --target production -vv
+```
+
+---
+
+## CI/CD Integration
+
+### Installation
+
+Install ReleaseBuilder as a global .NET tool:
+
+```bash
+dotnet tool install --global ReleaseBuilder
+release-builder --help
+```
+
+Or install a specific version:
+
+```bash
+dotnet tool install --global ReleaseBuilder --version 1.2.3
+```
+
+### Validate Config on Pull Requests
+
+Use `--dry-run` in PR pipelines to validate configuration without building:
+
+```yaml
+- name: Validate ReleaseBuilder config
+  run: release-builder --dry-run --config ReleaseConfig.xml --target production
+```
+
+Exit code is non-zero if errors are found (missing files, bad XML, etc.), so the pipeline fails fast.
+
+### Capture Build Outputs
+
+Use `--output-manifest` to feed artefact paths to subsequent pipeline steps:
+
+```yaml
+- name: Build release
+  run: release-builder --config ReleaseConfig.xml --target production --output-manifest manifest.json
+
+- name: Upload artefacts
+  run: |
+    path=$(jq -r '.Artefacts[0].Path' manifest.json)
+    # upload $path to object storage, etc.
+```
+
+### GitHub Actions Example
+
+```yaml
+- name: Install ReleaseBuilder
+  run: dotnet tool install --global ReleaseBuilder
+
+- name: Build
+  run: release-builder --config ReleaseConfig.xml --target ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }} --output-manifest manifest.json
+
+- name: Check exit code
+  run: |
+    if [ $? -ne 0 ]; then
+      echo "Build failed"
+      exit 1
+    fi
 ```
 
 ---

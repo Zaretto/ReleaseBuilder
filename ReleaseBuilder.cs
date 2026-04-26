@@ -32,11 +32,13 @@ namespace ReleaseBuilder
         public Dictionary<string, PublishTarget> Targets { get; private set; } = new Dictionary<string, PublishTarget>();
         public string TargetName { get; private set; }
         public bool NoBuild { get; }
+        public bool DryRun { get; }
         public bool UseShellExecute { get; }
+        public BuildManifest? Manifest { get; private set; }
         public Dictionary<string, bool> Modules { get; private set; } = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         public FileInfo? ConfigFile { get; }
 
-        public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild, bool useShellExecute)
+        public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild, bool useShellExecute, bool dryRun = false)
         {
             ToolsDirectories = new List<DirectoryInfo>();
             if (toolsdir != null)
@@ -52,6 +54,7 @@ namespace ReleaseBuilder
                 Root = Directory.GetCurrentDirectory();
 
             NoBuild = nobuild;
+            DryRun = dryRun;
             UseShellExecute = useShellExecute;
             if (target != null)
                 PublishType = target;
@@ -82,7 +85,7 @@ namespace ReleaseBuilder
         }
         public bool Valid => ConfigFile != null && Built;
         private bool Built { get; set; }
-        public void Build()
+        public bool Build()
         {
             addvar("TYPE", PublishType);
             addvar("PUBLISHROOT", Root);
@@ -102,6 +105,7 @@ namespace ReleaseBuilder
                 RLog.InfoFormat("Publish config target: {0}", PublishType);
                 Built = true;
             }
+            return RLog.ErrorCount == 0;
         }
         private bool LoadConfigFromXml(FileInfo configFile, string target, bool nobuild)
         {
@@ -131,7 +135,7 @@ namespace ReleaseBuilder
                     var av = GetAttribute(node, "archive-version", "");
                     if (!string.IsNullOrEmpty(av))
                     {
-                        av = _transform.Transform(_transform.ExpandVars(av), "");
+                        av = _transform.ExpandVars(av);
                         Targets[name.Value].Version = av;
                         addvar("TargetVersion", av);
                     }
@@ -354,7 +358,7 @@ namespace ReleaseBuilder
                     var newRoot = new DirectoryInfo(fromPath);
                     Directory.SetCurrentDirectory(newRoot.FullName);
                     var newConfigFile = new FileInfo(fromFile);
-                    var rb = new ReleaseBuilder(newRoot, newConfigFile, PublishType, ToolsDirectories, noBuildAttribute, UseShellExecute);
+                    var rb = new ReleaseBuilder(newRoot, newConfigFile, PublishType, ToolsDirectories, noBuildAttribute, UseShellExecute, DryRun);
                     rb.Build();
                     if (processAttribute)
                         rb.Process();
@@ -403,8 +407,13 @@ namespace ReleaseBuilder
                                     RLog.InfoFormat("Cleaning folder {0}", cleanFolder);
                                     foreach (var toDel in Directory.EnumerateFiles(cleanFolder, cleanPattern, SearchOption.AllDirectories))
                                     {
-                                        RLog.TraceFormat("del {0}", toDel);
-                                        File.Delete(toDel);
+                                        if (DryRun)
+                                            RLog.InfoFormat("[dry-run] Would delete: {0}", toDel);
+                                        else
+                                        {
+                                            RLog.TraceFormat("del {0}", toDel);
+                                            File.Delete(toDel);
+                                        }
                                     }
                                     if (cleanFolders)
                                     {
@@ -412,8 +421,13 @@ namespace ReleaseBuilder
                                         {
                                             try
                                             {
-                                                Directory.Delete(toDelFolder, true);
-                                                RLog.TraceFormat("del {0}", toDelFolder);
+                                                if (DryRun)
+                                                    RLog.InfoFormat("[dry-run] Would delete folder: {0}", toDelFolder);
+                                                else
+                                                {
+                                                    Directory.Delete(toDelFolder, true);
+                                                    RLog.TraceFormat("del {0}", toDelFolder);
+                                                }
                                             }
                                             catch (Exception ex)
                                             {
@@ -431,7 +445,10 @@ namespace ReleaseBuilder
                             string? file = GetFilenameFromNode(path, newPathAttribute, actionNode);
                             var text = actionNode.Value;
                             text = _transform.ExpandVars(text).ReplaceLineEndings("\n");
-                            File.WriteAllText(file, text);
+                            if (DryRun)
+                                RLog.InfoFormat("[dry-run] Would create: {0}", file);
+                            else
+                                File.WriteAllText(file, text);
                             break;
                         }
                     case "xml-edit":
@@ -471,15 +488,22 @@ namespace ReleaseBuilder
                                 }
                                 if (changed)
                                 {
-                                    XmlWriterSettings settings = new XmlWriterSettings
+                                    if (DryRun)
                                     {
-                                        OmitXmlDeclaration = omitDeclaration,
-                                        Indent = true
-                                    };
+                                        RLog.InfoFormat("[dry-run] Would save xml: {0}", file);
+                                    }
+                                    else
+                                    {
+                                        XmlWriterSettings settings = new XmlWriterSettings
+                                        {
+                                            OmitXmlDeclaration = omitDeclaration,
+                                            Indent = true
+                                        };
 
-                                    using (XmlWriter writer = XmlWriter.Create(file, settings))
-                                    {
-                                        xdoc.Save(writer);
+                                        using (XmlWriter writer = XmlWriter.Create(file, settings))
+                                        {
+                                            xdoc.Save(writer);
+                                        }
                                     }
                                 }
                             }
@@ -567,8 +591,13 @@ namespace ReleaseBuilder
                                     var destFile = Path.Combine(toPath, Path.GetFileName(newName));
 
                                     destFile = _transform.Transform(transform, destFile);
-                                    copyFile(fromPath, destFile, transformContents);
-                                    RLog.TraceFormat("copied {0}", destFile);
+                                    if (DryRun)
+                                        RLog.InfoFormat("[dry-run] Would copy: {0} -> {1}", fromPath, destFile);
+                                    else
+                                    {
+                                        copyFile(fromPath, destFile, transformContents);
+                                        RLog.TraceFormat("copied {0}", destFile);
+                                    }
                                 }
                                 else foreach (var file in copyList)
                                     {
@@ -580,8 +609,13 @@ namespace ReleaseBuilder
                                         }
                                         else
                                             destFile = Path.Combine(toPath, destFile);
-                                        copyFile(file, destFile, transformContents);
-                                        RLog.TraceFormat("copied {0}", destFile);
+                                        if (DryRun)
+                                            RLog.InfoFormat("[dry-run] Would copy: {0} -> {1}", file, destFile);
+                                        else
+                                        {
+                                            copyFile(file, destFile, transformContents);
+                                            RLog.TraceFormat("copied {0}", destFile);
+                                        }
                                     }
                             }
                         }
@@ -600,7 +634,9 @@ namespace ReleaseBuilder
                             var transformContents = actionNode.Elements("transform-content");
                             if (CheckParamNotEmpty(fromPath, "file must point to a valid file"))
                             {
-                                if (EditFile(fromPath, transformContents))
+                                if (DryRun)
+                                    RLog.InfoFormat("[dry-run] Would modify: {0}", fromPath);
+                                else if (EditFile(fromPath, transformContents))
                                     RLog.TraceFormat("modified {0}", fromPath);
                             }
                         }
@@ -639,8 +675,13 @@ namespace ReleaseBuilder
                             else
                             {
                                 args = _transform.ExpandVars(args);
-                                var msg = fexec.executeCommand(appFile, args, folder, true, UseShellExecute, requiredExitCodes);
-                                RLog.TraceFormat(msg);
+                                if (DryRun)
+                                    RLog.InfoFormat("[dry-run] Would exec: {0} {1}", appFile, args);
+                                else
+                                {
+                                    var msg = fexec.executeCommand(appFile, args, folder, true, UseShellExecute, requiredExitCodes);
+                                    RLog.TraceFormat(msg);
+                                }
                             }
                             break;
                         }
@@ -883,11 +924,11 @@ namespace ReleaseBuilder
         {
             if (Targets.Any())
             {
-                var files = Artefacts.SelectMany(xx => xx.GetFiles()).Distinct();
+                var files = Artefacts.SelectMany(xx => xx.GetFiles()).Distinct().ToList();
                 if (!files.Any())
                 {
                     RLog.InfoFormat("No artefacts - not building archive");
-                    return 0;
+                    return ExitCodes.Success;
                 }
                 var target = Targets[PublishType];
 
@@ -897,28 +938,65 @@ namespace ReleaseBuilder
                     PublishType,
                     target.GetVersion(vars["SemVer"])
                 };
+
+                Manifest = new BuildManifest
+                {
+                    TargetName = TargetName ?? "",
+                    TargetType = target.Type.ToString(),
+                    Version = vars["SemVer"] ?? "",
+                    OutputPath = target.Path.FullName,
+                    ErrorCount = RLog.ErrorCount,
+                    Timestamp = DateTimeOffset.UtcNow,
+                };
+
                 switch (target.Type)
                 {
                     case TargetTypeEnum.ZipFile:
-                        CreateZipFileArtefact(files, target, filename);
-                        return 0;
+                        if (DryRun)
+                        {
+                            var zipFileName = Path.Combine(target.Path.FullName, string.Join("-", filename) + ".zip");
+                            RLog.InfoFormat("[dry-run] Would create zip: {0} with {1} files", zipFileName, files.Count);
+                        }
+                        else
+                        {
+                            var zipPath = CreateZipFileArtefact(files, target, filename);
+                            Manifest.Artefacts.Add(new ManifestEntry
+                            {
+                                Path = zipPath,
+                                ArchiveName = Path.GetFileName(zipPath),
+                                SizeBytes = new FileInfo(zipPath).Length
+                            });
+                        }
+                        return ExitCodes.Success;
                     case TargetTypeEnum.LocalFolder:
                         {
-//                            var outputFile = Path.Combine(target.Path.FullName, string.Join("-", filename) + ".zip");
-
                             foreach (var file in files)
                             {
                                 var outputFileName = Path.Combine(target.Path.FullName, file.GetArchiveName());
-                                RLog.TraceFormat(String.Format("Copy {0} (from {1})", outputFileName, Path.GetFileName(file.Name)));
-                                File.Copy(file.Name, outputFileName, true);
+                                if (DryRun)
+                                {
+                                    RLog.InfoFormat("[dry-run] Would copy: {0} -> {1}", Path.GetFileName(file.Name), outputFileName);
+                                    Manifest.Artefacts.Add(new ManifestEntry { Path = outputFileName, ArchiveName = file.GetArchiveName() });
+                                }
+                                else
+                                {
+                                    RLog.TraceFormat(String.Format("Copy {0} (from {1})", outputFileName, Path.GetFileName(file.Name)));
+                                    File.Copy(file.Name, outputFileName, true);
+                                    Manifest.Artefacts.Add(new ManifestEntry
+                                    {
+                                        Path = outputFileName,
+                                        ArchiveName = file.GetArchiveName(),
+                                        SizeBytes = new FileInfo(file.Name).Length
+                                    });
+                                }
                             }
-                            return 0;
+                            return ExitCodes.Success;
                         }
                 }
             }
-            return 1;
+            return ExitCodes.BuildError;
         }
-        private static void CreateZipFileArtefact(IEnumerable<FileDetails> files, PublishTarget target, List<string> filename)
+        private static string CreateZipFileArtefact(IEnumerable<FileDetails> files, PublishTarget target, List<string> filename)
         {
             int fileCount = 0;
             var zipFileName = Path.Combine(target.Path.FullName, string.Join("-", filename) + ".zip");
@@ -949,6 +1027,7 @@ namespace ReleaseBuilder
                 }
             }
             RLog.InfoFormat(String.Format("Created {0} with {1} files", zipFileName, fileCount));
+            return zipFileName;
         }
 
         internal void AddModule(string module)

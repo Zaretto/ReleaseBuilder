@@ -3,13 +3,25 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-    <RuntimeIdentifiers>win-x64;osx-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers>win-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>release-builder</ToolCommandName>
+    <PackageId>ReleaseBuilder</PackageId>
+    <Authors>Richard Harrison</Authors>
+    <Description>Cross-platform XML-driven release packaging tool with GitVersion integration</Description>
+    <PackageLicenseExpression>GPL-2.0-only</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Zaretto/ReleaseBuilder</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="ReleaseBuilder.Tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

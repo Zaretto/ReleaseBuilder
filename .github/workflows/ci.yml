@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install GitVersion
+        run: dotnet tool install --global GitVersion.Tool
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Test
+        run: dotnet test --no-build -c Release
+
+  nuget:
+    needs: test
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install GitVersion
+        run: dotnet tool install --global GitVersion.Tool
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore -c Release
+
+      - name: Pack
+        run: dotnet pack --no-build -c Release -o ./nupkg
+
+      - name: Publish to NuGet
+        run: dotnet nuget push ./nupkg/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+
+  build-release:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            ready_to_run: true
+          - os: macos-latest
+            rid: osx-x64
+            ready_to_run: false
+          - os: macos-latest
+            rid: osx-arm64
+            ready_to_run: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install GitVersion
+        run: dotnet tool install --global GitVersion.Tool
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Publish
+        run: >
+          dotnet publish -c Release
+          -r ${{ matrix.rid }}
+          --no-self-contained
+          -p:PublishSingleFile=true
+          -p:PublishReadyToRun=${{ matrix.ready_to_run }}
+          -o publish/${{ matrix.rid }}
+
+      - name: Zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath ReleaseBuilder-${{ matrix.rid }}.zip
+
+      - name: Zip (macOS)
+        if: runner.os == 'macOS'
+        run: zip -j ReleaseBuilder-${{ matrix.rid }}.zip publish/${{ matrix.rid }}/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReleaseBuilder-${{ matrix.rid }}
+          path: ReleaseBuilder-${{ matrix.rid }}.zip
+
+  github-release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --repo ${{ github.repository }} \
+            --title "ReleaseBuilder ${{ github.ref_name }}" \
+            --generate-notes \
+            ReleaseBuilder-win-x64/ReleaseBuilder-win-x64.zip \
+            ReleaseBuilder-osx-x64/ReleaseBuilder-osx-x64.zip \
+            ReleaseBuilder-osx-arm64/ReleaseBuilder-osx-arm64.zip

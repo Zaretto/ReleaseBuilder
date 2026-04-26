@@ -20,13 +20,23 @@ A cross-platform .NET 8.0 build automation tool that uses XML configuration file
 
 ## Quick Start
 
+### Installation
+
+**As a .NET global tool (recommended):**
+```bash
+dotnet tool install --global ReleaseBuilder
+release-builder --help
+```
+
+**Or build from source:**
+
 ### Prerequisites
 
 1. **.NET 8.0 SDK** - https://dotnet.microsoft.com/download
 2. **Git** - For GitVersion to analyze repository
 3. **GitVersion.Tool** - `dotnet tool install --global GitVersion.Tool`
 
-### Building ReleaseBuilder
+### Building from Source
 
 **Windows:**
 ```cmd
@@ -68,7 +78,9 @@ ReleaseBuilder [options]
 
 - `-r, --root <directory>` - Root folder for the build (defaults to current directory)
 - `-c, --config <file>` - Path to ReleaseConfig.xml file
+- `-d, --dry-run` - Validate config and report actions without executing them
 - `-t, --target <name>` - Target to build (default: "live")
+- `-o, --output-manifest <file>` - Write JSON build manifest to file (use `-` for stdout)
 - `-p, --toolsdir <directory>` - Add path to search for tools (can be specified multiple times)
 - `-m, --module <name>` - Build only specific modules (can be specified multiple times)
 - `-n, --nobuild` - Skip building artifacts
@@ -76,15 +88,31 @@ ReleaseBuilder [options]
 - `-v, --verbose` - Increase verbosity (use twice for extra verbose)
 - `-h, --help` - Show help information
 
-### Example
+### Examples
 
 ```bash
 # Build release target with verbose output
-ReleaseBuilder --root /path/to/project --config ReleaseConfig.xml --target release -v
+release-builder --root /path/to/project --config ReleaseConfig.xml --target release -v
+
+# Validate config without building anything (useful in PRs)
+release-builder --dry-run --config ReleaseConfig.xml --target production
+
+# Build and capture artefact paths for the pipeline
+release-builder --config ReleaseConfig.xml --target live --output-manifest manifest.json
 
 # Build only specific modules
-ReleaseBuilder --module ModuleA --module ModuleB --nobuild
+release-builder --module ModuleA --module ModuleB --nobuild
 ```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Config file not found |
+| 2 | Build errors |
+| 3 | Artefact errors |
+| 4 | Invalid arguments |
 
 ## Configuration
 

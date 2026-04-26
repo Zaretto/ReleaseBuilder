@@ -45,6 +45,9 @@ namespace ReleaseBuilder
     public static class RLog
     {
         public static LogMessageLevel Level=LogMessageLevel.Info;
+        public static int ErrorCount { get; private set; } = 0;
+        public static void ResetErrorCount() => ErrorCount = 0;
+
         public static void Format(LogMessageLevel level, string message, params object[] args)
         {
             LogMessage newMessage;
@@ -52,6 +55,8 @@ namespace ReleaseBuilder
                 newMessage = new LogMessage(level, String.Format(message, args));
             else
                 newMessage = new LogMessage(level, message);
+            if (level >= LogMessageLevel.Error)
+                ErrorCount++;
             if (level >= Level)
                 Console.WriteLine(newMessage.ToString());
         }

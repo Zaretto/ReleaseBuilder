@@ -41,7 +41,18 @@ This guide is for developers and release engineers who need to:
 
 ### Installation
 
-#### Prerequisites
+#### Option 1: Install as a .NET global tool (recommended)
+
+```bash
+dotnet tool install --global ReleaseBuilder
+release-builder --help
+```
+
+This installs the `release-builder` command globally. Requires .NET 8.0 SDK or Runtime.
+
+#### Option 2: Build from source
+
+##### Prerequisites
 
 1. **.NET 8.0 SDK** - Download from https://dotnet.microsoft.com/download
    - Windows: Download and run the installer
@@ -58,7 +69,7 @@ This guide is for developers and release engineers who need to:
    dotnet tool install --global GitVersion.Tool
    ```
 
-#### Building ReleaseBuilder
+#### Building from Source
 
 **On Windows:**
 ```cmd
@@ -1087,6 +1098,113 @@ ReleaseBuilder -v
 
 ---
 
+### Tutorial 5: CI/CD Pipeline Integration
+
+**Scenario**: You want to use ReleaseBuilder in a GitHub Actions pipeline — validate config on pull requests, build and publish artefacts on merge to main.
+
+**Step 1: Install ReleaseBuilder in the pipeline**
+
+```yaml
+- name: Install GitVersion
+  run: dotnet tool install --global GitVersion.Tool
+
+- name: Install ReleaseBuilder
+  run: dotnet tool install --global ReleaseBuilder
+```
+
+**Step 2: Validate config on pull requests**
+
+Add a dry-run step that catches config errors before they reach main:
+
+```yaml
+- name: Validate release config
+  run: release-builder --dry-run --config ReleaseConfig.xml --target production -v
+```
+
+The job fails if any errors are found (missing paths, bad XML, unknown variables, etc.).
+
+**Step 3: Build and capture artefacts on merge**
+
+```yaml
+- name: Build release
+  run: |
+    release-builder \
+      --config ReleaseConfig.xml \
+      --target ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }} \
+      --output-manifest manifest.json
+
+- name: Upload artefact
+  run: |
+    ZIP=$(jq -r '.Artefacts[0].Path' manifest.json)
+    echo "Uploading $ZIP ($(jq '.Artefacts[0].SizeBytes' manifest.json) bytes)"
+    # ... upload $ZIP to S3, Azure Blob, etc.
+```
+
+**Full workflow example** (`.github/workflows/release.yml`):
+
+```yaml
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # GitVersion needs full history
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install tools
+        run: |
+          dotnet tool install --global GitVersion.Tool
+          dotnet tool install --global ReleaseBuilder
+
+      - name: Validate config (PR only)
+        if: github.event_name == 'pull_request'
+        run: release-builder --dry-run --config ReleaseConfig.xml --target production
+
+      - name: Build release (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          release-builder \
+            --config ReleaseConfig.xml \
+            --target production \
+            --output-manifest manifest.json
+
+      - name: Check for errors
+        if: github.ref == 'refs/heads/main'
+        run: |
+          ERRORS=$(jq '.ErrorCount' manifest.json)
+          if [ "$ERRORS" -ne 0 ]; then
+            echo "Build had $ERRORS error(s)"
+            exit 1
+          fi
+```
+
+**Checking exit codes in scripts:**
+
+```bash
+release-builder --config ReleaseConfig.xml --target production
+case $? in
+  0) echo "Success" ;;
+  1) echo "Config file not found" ;;
+  2) echo "Build errors" ;;
+  4) echo "Invalid arguments" ;;
+  *) echo "Unexpected error" ;;
+esac
+```
+
+---
+
 ## Advanced Techniques
 
 ### Working with Configuration Files
@@ -1261,6 +1379,19 @@ ReleaseBuilder --target dev -vv
 1. Check module name matches the `name` attribute or `<Name>` element
 2. Module names are case-insensitive
 3. Use `-v` to see which modules are being processed
+
+### Problem: Non-Zero Exit Code But Build Looks Fine
+
+**Symptoms**: Exit code 2 but no obvious failures in the log
+
+**Solutions**:
+1. Check for error lines in the log output — all errors are logged and the exit code reflects whether any occurred
+2. Run with `-v` for more detail
+3. Use `--dry-run` to validate the config without building:
+   ```bash
+   release-builder --dry-run --config ReleaseConfig.xml --target production -v
+   ```
+   Dry-run still validates paths and variable expansion, so it will surface most config problems without any side effects.
 
 ---
 
