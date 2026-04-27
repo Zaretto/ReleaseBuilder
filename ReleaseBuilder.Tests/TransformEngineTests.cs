@@ -226,9 +226,8 @@ namespace ReleaseBuilder.Tests
         [Fact]
         public void ExpandVars_EnvVar()
         {
-            // Use a well-known env var that always exists on Windows
             var (_, engine) = Create();
-            var result = engine.ExpandVars("$SystemRoot");
+            var result = engine.ExpandVars("$PATH");
             Assert.False(string.IsNullOrEmpty(result));
             Assert.DoesNotContain("$", result);
         }
@@ -251,7 +250,7 @@ namespace ReleaseBuilder.Tests
         public void ExpandVars_Mixed_Tilde_And_Env()
         {
             var (_, engine) = Create(("NAME", "test"));
-            var result = engine.ExpandVars("~NAME~-$SystemRoot");
+            var result = engine.ExpandVars("~NAME~-$PATH");
             Assert.StartsWith("test-", result);
         }
 
