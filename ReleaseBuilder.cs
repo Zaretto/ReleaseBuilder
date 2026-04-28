@@ -472,31 +472,15 @@ namespace ReleaseBuilder
                                     switch (editNode.Name.ToString().ToLower())
                                     {
                                         case "node":
-                                            {
-                                                var pathSelector = GetFilePathAttribute(editNode, "path");
-                                                var nodeAction = GetAttribute<string>(editNode, "action");
-                                                var elements = xdoc.XPathSelectElements(pathSelector);
-                                                foreach (var element in elements)
-                                                {
-                                                    var nv = _transform.Transform(nodeAction, element.Value);
-                                                    if (nv != element.Value)
-                                                    {
-                                                        element.Value = nv;
-                                                        changed = true;
-                                                        RLog.TraceFormat("Node {0} value {1}", element.Name, element.Value);
-                                                    }
-                                                }
-                                                break;
-                                            }
-
                                         case "attribute":
                                             {
                                                 var pathSelector = GetFilePathAttribute(editNode, "path");
                                                 var nodeAction = GetAttribute<string>(editNode, "action");
                                                 // XPathEvaluate returns IEnumerable<object> (not IEnumerable<XObject>)
                                                 // for node-set results; items are XAttribute or XElement at runtime.
-                                                // This handles attribute-selecting XPaths like @*[local-name()='x']
-                                                // that XPathSelectElements cannot reach.
+                                                // Using XPathEvaluate (rather than XPathSelectElements) means both
+                                                // <node> and <attribute> handle element- and attribute-selecting
+                                                // XPaths, including predicates like @*[local-name()='x'].
                                                 if (xdoc.XPathEvaluate(pathSelector) is IEnumerable<object> items)
                                                 {
                                                     foreach (var item in items)
