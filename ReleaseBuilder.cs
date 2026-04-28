@@ -489,6 +489,43 @@ namespace ReleaseBuilder
                                                 break;
                                             }
 
+                                        case "attribute":
+                                            {
+                                                var pathSelector = GetFilePathAttribute(editNode, "path");
+                                                var nodeAction = GetAttribute<string>(editNode, "action");
+                                                // XPathEvaluate returns IEnumerable<object> (not IEnumerable<XObject>)
+                                                // for node-set results; items are XAttribute or XElement at runtime.
+                                                // This handles attribute-selecting XPaths like @*[local-name()='x']
+                                                // that XPathSelectElements cannot reach.
+                                                if (xdoc.XPathEvaluate(pathSelector) is IEnumerable<object> items)
+                                                {
+                                                    foreach (var item in items)
+                                                    {
+                                                        if (item is XAttribute attr)
+                                                        {
+                                                            var nv = _transform.Transform(nodeAction, attr.Value);
+                                                            if (nv != attr.Value)
+                                                            {
+                                                                attr.Value = nv;
+                                                                changed = true;
+                                                                RLog.TraceFormat("Attribute {0} value {1}", attr.Name, attr.Value);
+                                                            }
+                                                        }
+                                                        else if (item is XElement el)
+                                                        {
+                                                            var nv = _transform.Transform(nodeAction, el.Value);
+                                                            if (nv != el.Value)
+                                                            {
+                                                                el.Value = nv;
+                                                                changed = true;
+                                                                RLog.TraceFormat("Node {0} value {1}", el.Name, el.Value);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                break;
+                                            }
+
                                         default:
                                             ThrowErrorForNode(editNode, String.Format("Unknown directive {0}", editNode.Name));
                                             break;
