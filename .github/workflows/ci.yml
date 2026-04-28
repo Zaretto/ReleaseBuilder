@@ -71,6 +71,9 @@ jobs:
           - os: macos-latest
             rid: osx-arm64
             ready_to_run: false
+          - os: ubuntu-latest
+            rid: linux-x64
+            ready_to_run: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -101,8 +104,8 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath ReleaseBuilder-${{ matrix.rid }}.zip
 
-      - name: Zip (macOS)
-        if: runner.os == 'macOS'
+      - name: Zip (macOS/Linux)
+        if: runner.os != 'Windows'
         run: zip -j ReleaseBuilder-${{ matrix.rid }}.zip publish/${{ matrix.rid }}/*
 
       - uses: actions/upload-artifact@v4
@@ -128,4 +131,5 @@ jobs:
             --generate-notes \
             ReleaseBuilder-win-x64/ReleaseBuilder-win-x64.zip \
             ReleaseBuilder-osx-x64/ReleaseBuilder-osx-x64.zip \
-            ReleaseBuilder-osx-arm64/ReleaseBuilder-osx-arm64.zip
+            ReleaseBuilder-osx-arm64/ReleaseBuilder-osx-arm64.zip \
+            ReleaseBuilder-linux-x64/ReleaseBuilder-linux-x64.zip
