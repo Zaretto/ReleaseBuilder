@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ReleaseConfig xmlns:p1="http://www.w3.org/2001/XMLSchema-instance"
+               p1:noNamespaceSchemaLocation="ReleaseConfig.xsd">
+
+  <Name>ReleaseBuilder</Name>
+
+  <!-- Windows x64 Target -->
+  <Target name="win-x64" path="releases" type="zip" archive-version="~SemVer~">
+    <Set name="RUNTIME" value="win-x64" />
+    <Set name="PUBLISH_PROFILE" value="WindowsX64" />
+    <Set name="OUTPUT_DIR" value="publish\release\win-x64" />
+  </Target>
+
+  <!-- macOS x64 Target -->
+  <Target name="osx-x64" path="releases" type="zip" archive-version="~SemVer~">
+    <Set name="RUNTIME" value="osx-x64" />
+    <Set name="PUBLISH_PROFILE" value="OSX-x64" />
+    <Set name="OUTPUT_DIR" value="publish\release\osx-x64" />
+  </Target>
+
+  <!-- macOS ARM64 Target -->
+  <Target name="osx-arm64" path="releases" type="zip" archive-version="~SemVer~">
+    <Set name="RUNTIME" value="osx-arm64" />
+    <Set name="PUBLISH_PROFILE" value="OSX-arm64" />
+    <Set name="OUTPUT_DIR" value="publish\release\osx-arm64" />
+  </Target>
+
+  <!-- Build Artefacts -->
+  <Artefacts>
+    <build>
+      <clean folder="~OUTPUT_DIR~" include-folders="true" />
+      <exec app="dotnet"
+            args="restore"
+            folder="~PUBLISHROOT~" />
+      <exec app="dotnet"
+            args="publish -p:PublishProfile=~PUBLISH_PROFILE~"
+            folder="~PUBLISHROOT~" />
+    </build>
+    <folder>~OUTPUT_DIR~</folder>
+  </Artefacts>
+
+</ReleaseConfig>
