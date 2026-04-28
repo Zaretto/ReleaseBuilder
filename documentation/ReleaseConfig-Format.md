@@ -355,6 +355,7 @@ Recursively invokes ReleaseBuilder on a nested configuration file, enabling modu
 | `folder` | Yes | Subfolder containing the nested config |
 | `file` | No | Config filename (default: `ReleaseConfig.xml` or `ReleaseConfig{name}.xml`) |
 | `process` | No | Whether to process artifacts (default: `false`) |
+| `active` | No | Condition expression — skips this element when the expression evaluates to empty. Supports the same `when,~VAR~,==,value` syntax as `<Artefacts active="...">`. |
 
 **How Configuration Chaining Works:**
 
@@ -451,7 +452,57 @@ ReleaseBuilder --module DatabaseMigrations
 # Executes but doesn't collect artifacts (process="false")
 ```
 
-**Example 3: Nested Chaining (Multi-Level)**
+**Example 3: Platform-Conditional Builds**
+
+Use `active="when,~OS~,==,..."` to run nested builds only on specific platforms:
+
+```xml
+<ReleaseConfig>
+  <Name>MyApp</Name>
+
+  <Target name="live" path="releases" type="zip" archive-version="~SemVer~" />
+
+  <!-- macOS app bundle — only on macOS -->
+  <ReleaseBuilder folder="macos-bundle"
+                  process="true"
+                  active="when,~OS~,==,osx" />
+
+  <!-- Windows installer — only on Windows -->
+  <ReleaseBuilder folder="windows-installer"
+                  process="true"
+                  active="when,~OS~,==,windows" />
+
+  <!-- Cross-platform core — always runs -->
+  <ReleaseBuilder folder="core" process="true" />
+</ReleaseConfig>
+```
+
+Platform-conditional artefacts work the same way:
+
+```xml
+<!-- Use ~RUNTIME~ as a dotnet publish RID -->
+<Artefacts>
+  <build>
+    <exec app="dotnet" args="publish -c Release -r ~RUNTIME~ --no-self-contained" />
+  </build>
+</Artefacts>
+
+<!-- Include macOS-specific files only on macOS -->
+<Artefacts active="when,~OS~,==,osx">
+  <folder>publish/~RUNTIME~</folder>
+</Artefacts>
+
+<!-- Include Windows-specific files only on Windows -->
+<Artefacts active="when,~OS~,==,windows">
+  <folder>publish/~RUNTIME~</folder>
+</Artefacts>
+```
+
+**Available platform variables:** `~OS~` (`windows`, `osx`, `linux`), `~ARCH~` (`x64`, `arm64`, ...), `~RUNTIME~` (`win-x64`, `osx-arm64`, `linux-x64`, ...).
+
+---
+
+**Example 4: Nested Chaining (Multi-Level)**
 ```xml
 <!-- Level 1: Main ReleaseConfig.xml -->
 <ReleaseConfig>

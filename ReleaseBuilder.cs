@@ -9,6 +9,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Reflection.Metadata.Ecma335;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.Arm;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -89,6 +90,11 @@ namespace ReleaseBuilder
         {
             addvar("TYPE", PublishType);
             addvar("PUBLISHROOT", Root);
+
+            var (os, arch, runtime) = GetPlatformInfo();
+            addvar("OS", os);
+            addvar("ARCH", arch);
+            addvar("RUNTIME", runtime);
 
             RLog.TraceFormat("Using config file {0}", ConfigFile.FullName);
 
@@ -308,6 +314,8 @@ namespace ReleaseBuilder
 
         private void releaseBuilder(XElement node)
         {
+            if (!When(node))
+                return;
             var folderAttribute = _transform.ExpandVars(GetAttribute(node, "folder", ""));
 
             var noBuildAttribute = GetAttribute(node, "nobuild", NoBuild);
@@ -920,6 +928,16 @@ namespace ReleaseBuilder
 
         private void addvar(string k, string v) => vars.Set(k, v);
         private void addvar(string k, long? v) => vars.Set(k, v);
+
+        internal static (string os, string arch, string runtime) GetPlatformInfo()
+        {
+            var os = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "windows"
+                   : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)     ? "osx"
+                   :                                                        "linux";
+            var arch = RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
+            var runtime = $"{(os == "windows" ? "win" : os)}-{arch}";
+            return (os, arch, runtime);
+        }
         public int Process()
         {
             if (Targets.Any())

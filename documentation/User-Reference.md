@@ -1296,6 +1296,9 @@ These variables are automatically available:
 |----------|-------------|---------------|
 | `TYPE` | Current target name | `production`, `dev` |
 | `PUBLISHROOT` | Root directory | `/home/user/project` |
+| `OS` | Operating system: `windows`, `osx`, or `linux` | `windows` |
+| `ARCH` | CPU architecture: `x64`, `arm64`, `x86`, `arm` | `x64` |
+| `RUNTIME` | .NET RID-style combined platform: `win-x64`, `osx-arm64`, `linux-x64` | `win-x64` |
 | `SemVer` | Semantic version from GitVersion | `1.2.3` |
 | `VERSION` | Alias for SemVer | `1.2.3` |
 | `TARGETPATH` | Active target's output path | `/releases` |
