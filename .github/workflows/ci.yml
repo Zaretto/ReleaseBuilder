@@ -47,12 +47,8 @@ jobs:
       - name: Install GitVersion
         run: dotnet tool install --global GitVersion.Tool
 
-      - name: Get version
-        id: gitversion
-        run: echo "nuget=$(dotnet-gitversion /showvariable NuGetVersionV2)" >> "$GITHUB_OUTPUT"
-
       - name: Pack
-        run: dotnet pack ReleaseBuilder.csproj -c Release -p:RuntimeIdentifiers= -p:Version=${{ steps.gitversion.outputs.nuget }} -o ./nupkg
+        run: dotnet pack ReleaseBuilder.csproj -c Release -p:RuntimeIdentifiers= -p:Version=${GITHUB_REF_NAME#v} -o ./nupkg
 
       - name: Publish to NuGet
         if: env.NUGET_API_KEY != ''
