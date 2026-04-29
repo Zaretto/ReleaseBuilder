@@ -70,9 +70,14 @@ ReleaseBuilder automatically provides these variables:
 |----------|-------------|---------|
 | `TYPE` | Current target name | `live`, `dev`, `test` |
 | `PUBLISHROOT` | Root directory specified with -r or current directory | `/path/to/project` |
+| `OS` | Operating system | `windows`, `osx`, `linux` |
+| `ARCH` | CPU architecture | `x64`, `arm64`, `x86`, `arm` |
+| `RUNTIME` | .NET RID-style platform identifier | `win-x64`, `osx-arm64`, `linux-x64` |
 | `SemVer` | Semantic version from GitVersion | `1.2.3` |
 | `VERSION` | NuGetVersionV2 or MajorMinorPatch from GitVersion | `1.2.3` |
+| `IntSemVer` | Packed integer: `major * 10000 + minor * 100 + patch`. Supports CalVer (year as major). | `10203` |
 | `TARGETPATH` | Path of the active target | `/output/releases` |
+| `TargetVersion` | Version string from active target's `archive-version` attribute | `1.2.3` |
 | `GITVERSION.JSON` | Full GitVersion JSON output | JSON object with all version info |
 
 ### GitVersion Integration
@@ -533,7 +538,7 @@ Platform-conditional artefacts work the same way:
 
 Execution hierarchy: `Main → ProductA → (API, UI, Worker)`
 
-**Example 4: Custom Config Filenames**
+**Example 5: Custom Config Filenames**
 ```xml
 <ReleaseConfig>
   <Name>MyProject</Name>
@@ -592,7 +597,7 @@ Children can override the parent's `<Target>` to use different output paths. Thi
 - `process="true"` - Include artifacts from nested build in parent package
 - `process="false"` - Execute nested build but don't collect artifacts (useful for migrations, tests, etc.)
 
-**Example 5: WebAPI + Android App (Different Output Paths)**
+**Example 6: WebAPI + Android App (Different Output Paths)**
 
 Common scenario: Building both a web API and mobile app that need different output locations.
 
@@ -1057,14 +1062,27 @@ Edits XML files using XPath selectors.
 | `omit-declaration` | No | `false` | Omit XML declaration when saving |
 
 **Child Elements:**
-- `<node path="..." action="...">` - Modify nodes matching XPath
+- `<node path="..." action="...">` — Modify XML elements or attributes matching XPath
+- `<attribute path="..." action="...">` — Identical to `<node>`; provided as a readable alias when the XPath selects attributes
 
-**node Attributes:**
+Both directives use `XPathEvaluate` internally and handle element and attribute results equally. Use whichever makes the intent clearer.
+
+**Attributes (both node and attribute):**
 
 | Attribute | Required | Description |
 |-----------|----------|-------------|
-| `path` | Yes | XPath expression to select nodes |
-| `action` | Yes | Transformation to apply to node value |
+| `path` | Yes | XPath expression to select nodes or attributes |
+| `action` | Yes | Transformation to apply to the matched value |
+
+**Namespace-prefixed attributes (e.g. Android manifest):**
+
+When an attribute has a namespace prefix (like `android:versionName`) that LINQ to XML cannot resolve without a namespace manager, use a `local-name()` predicate instead of the qualified name:
+
+```xml
+<!-- Select android:versionName without needing namespace resolution -->
+<attribute path="/manifest/@*[local-name()='versionName']" action="set,~SemVer~" />
+<attribute path="/manifest/@*[local-name()='versionCode']" action="set,~IntSemVer~" />
+```
 
 **Examples:**
 ```xml
@@ -1078,6 +1096,12 @@ Edits XML files using XPath selectors.
   <node path="//appSettings/add[@key='Environment']/@value" action="set,~TYPE~" />
   <node path="//connectionStrings/add/@connectionString"
         action="replace,localhost,prodserver.com" />
+</xml-edit>
+
+<!-- Android manifest — namespace-prefixed attributes via local-name() -->
+<xml-edit file="app/src/main/AndroidManifest.xml">
+  <attribute path="/manifest/@*[local-name()='versionName']" action="set,~SemVer~" />
+  <attribute path="/manifest/@*[local-name()='versionCode']" action="set,~IntSemVer~" />
 </xml-edit>
 ```
 

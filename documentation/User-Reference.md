@@ -2096,22 +2096,23 @@ File must exist and be valid XML.
 
 **Child Elements:**
 
-##### node
+##### node / attribute
 
-Selects and modifies XML nodes.
+Both directives are equivalent — use whichever makes the intent clearer. `<node>` is conventional for element content; `<attribute>` is a readable alias that signals you are targeting an attribute.
 
 **Syntax:**
 ```xml
-<node path="xpath_expression" action="transformation" />
+<node      path="xpath_expression" action="transformation" />
+<attribute path="xpath_expression" action="transformation" />
 ```
 
 **Attributes:**
-- `path` (required) - XPath expression to select nodes
-- `action` (required) - Transformation to apply to node value
+- `path` (required) - XPath expression to select elements or attributes
+- `action` (required) - Transformation to apply to the matched value
 
 **Examples:**
 
-**Example 1: Update version**
+**Example 1: Update version element**
 ```xml
 <xml-edit file="Package.appxmanifest">
   <node path="//Identity/@Version" action="set,~VERSION~" />
@@ -2146,6 +2147,17 @@ Selects and modifies XML nodes.
 </xml-edit>
 ```
 
+**Example 5: Android manifest — namespace-prefixed attributes**
+
+Android manifests use `android:versionName` and `android:versionCode`, but the `android:` namespace prefix cannot be resolved without a namespace manager. Use a `local-name()` predicate instead:
+
+```xml
+<xml-edit file="app/src/main/AndroidManifest.xml">
+  <attribute path="/manifest/@*[local-name()='versionName']" action="set,~SemVer~" />
+  <attribute path="/manifest/@*[local-name()='versionCode']" action="set,~IntSemVer~" />
+</xml-edit>
+```
+
 **XPath Support:**
 - Full XPath 1.0 syntax
 - Attribute selection with `@`
@@ -2154,13 +2166,14 @@ Selects and modifies XML nodes.
 
 **Common XPath Patterns:**
 ```xpath
-//elementName                      Select all <elementName>
-//parent/child                     Select <child> under <parent>
-//@attributeName                   Select all attributes
-//element[@attr='value']           Filter by attribute value
-//element[@attr='value']/@attr2    Select attribute of filtered element
-//element[1]                       First element
-//element[last()]                  Last element
+//elementName                           Select all <elementName> elements
+//parent/child                          Select <child> under <parent>
+//@attributeName                        Select all named attributes
+//element[@attr='value']                Filter by attribute value
+//element[@attr='value']/@attr2         Select attribute of filtered element
+//element[1]                            First element
+//element[last()]                       Last element
+/root/@*[local-name()='attrName']       Attribute by local name (namespace-safe)
 ```
 
 **Behavior:**
@@ -2168,7 +2181,7 @@ Selects and modifies XML nodes.
 - Changes saved back to same file
 - Only nodes matching XPath are modified
 - If XPath matches no nodes, no error (silent skip)
-- Multiple `<node>` elements processed in order
+- Multiple `<node>` / `<attribute>` elements processed in order
 
 ---
 
