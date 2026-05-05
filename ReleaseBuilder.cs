@@ -410,40 +410,42 @@ namespace ReleaseBuilder
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                     });
-                                if (CheckParamNotEmpty(cleanFolder, "folder to clean must be found"))
+                                if (string.IsNullOrEmpty(cleanFolder))
                                 {
-                                    RLog.InfoFormat("Cleaning folder {0}", cleanFolder);
-                                    foreach (var toDel in Directory.EnumerateFiles(cleanFolder, cleanPattern, SearchOption.AllDirectories))
+                                    RLog.WarnFormat("clean: folder not found, skipping — {0}", GetAttribute(actionNode, "folder", ""));
+                                    break;
+                                }
+                                RLog.InfoFormat("Cleaning folder {0}", cleanFolder);
+                                foreach (var toDel in Directory.EnumerateFiles(cleanFolder, cleanPattern, SearchOption.AllDirectories))
+                                {
+                                    if (DryRun)
+                                        RLog.InfoFormat("[dry-run] Would delete: {0}", toDel);
+                                    else
                                     {
-                                        if (DryRun)
-                                            RLog.InfoFormat("[dry-run] Would delete: {0}", toDel);
-                                        else
+                                        RLog.TraceFormat("del {0}", toDel);
+                                        File.Delete(toDel);
+                                    }
+                                }
+                                if (cleanFolders)
+                                {
+                                    foreach (var toDelFolder in Directory.EnumerateDirectories(cleanFolder, cleanPattern, SearchOption.AllDirectories))
+                                    {
+                                        try
                                         {
-                                            RLog.TraceFormat("del {0}", toDel);
-                                            File.Delete(toDel);
+                                            if (DryRun)
+                                                RLog.InfoFormat("[dry-run] Would delete folder: {0}", toDelFolder);
+                                            else
+                                            {
+                                                Directory.Delete(toDelFolder, true);
+                                                RLog.TraceFormat("del {0}", toDelFolder);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "Could not delete folder {0}", toDelFolder);
                                         }
                                     }
-                                    if (cleanFolders)
-                                    {
-                                        foreach (var toDelFolder in Directory.EnumerateDirectories(cleanFolder, cleanPattern, SearchOption.AllDirectories))
-                                        {
-                                            try
-                                            {
-                                                if (DryRun)
-                                                    RLog.InfoFormat("[dry-run] Would delete folder: {0}", toDelFolder);
-                                                else
-                                                {
-                                                    Directory.Delete(toDelFolder, true);
-                                                    RLog.TraceFormat("del {0}", toDelFolder);
-                                                }
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "Could not delete folder {0}", toDelFolder);
-                                            }
-                                        }
 
-                                    }
                                 }
                             }
                             break;

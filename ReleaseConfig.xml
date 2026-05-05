@@ -25,6 +25,13 @@
     <Set name="OUTPUT_DIR" value="publish\release\osx-arm64" />
   </Target>
 
+  <!-- Linux x64 Target -->
+  <Target name="linux-x64" path="releases" type="zip" archive-version="~SemVer~">
+    <Set name="RUNTIME" value="linux-x64" />
+    <Set name="PUBLISH_PROFILE" value="Linux-x64" />
+    <Set name="OUTPUT_DIR" value="publish/release/linux-x64" />
+  </Target>
+
   <!-- Build Artefacts -->
   <Artefacts>
     <build>

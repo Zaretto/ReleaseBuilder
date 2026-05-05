@@ -15,8 +15,8 @@ namespace ReleaseBuilder
         public PublishTarget(string name, string path)
         {
             this.Name = name;
-            if (path != null && Directory.Exists(path))
-                this.Path = new DirectoryInfo(path);
+            if (path != null)
+                this.Path = Directory.CreateDirectory(path);
             else
                 throw new Exception(string.Format("PublishTarget: {0} path not found", name));
 

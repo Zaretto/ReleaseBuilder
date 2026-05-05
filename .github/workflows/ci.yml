@@ -64,16 +64,12 @@ jobs:
         include:
           - os: windows-latest
             rid: win-x64
-            ready_to_run: true
           - os: macos-latest
             rid: osx-x64
-            ready_to_run: false
           - os: macos-latest
             rid: osx-arm64
-            ready_to_run: false
           - os: ubuntu-latest
             rid: linux-x64
-            ready_to_run: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -90,28 +86,19 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Publish
-        run: >
-          dotnet publish ReleaseBuilder.csproj -c Release
-          -r ${{ matrix.rid }}
-          --no-self-contained
-          -p:PublishSingleFile=true
-          -p:PublishReadyToRun=${{ matrix.ready_to_run }}
-          -o publish/${{ matrix.rid }}
+      - name: Pack ReleaseBuilder
+        run: dotnet pack ReleaseBuilder.csproj -c Release -p:RuntimeIdentifiers= -p:Version=0.0.0-ci -o ./nupkg-local
 
-      - name: Zip (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -Path publish/${{ matrix.rid }}/* -DestinationPath ReleaseBuilder-${{ matrix.rid }}.zip
+      - name: Install ReleaseBuilder
+        run: dotnet tool install --global ReleaseBuilder --add-source ./nupkg-local --version 0.0.0-ci
 
-      - name: Zip (macOS/Linux)
-        if: runner.os != 'Windows'
-        run: zip -j ReleaseBuilder-${{ matrix.rid }}.zip publish/${{ matrix.rid }}/*
+      - name: Build release
+        run: release-builder --target ${{ matrix.rid }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: ReleaseBuilder-${{ matrix.rid }}
-          path: ReleaseBuilder-${{ matrix.rid }}.zip
+          path: releases/ReleaseBuilder-${{ matrix.rid }}-*.zip
 
   github-release:
     needs: build-release
@@ -129,7 +116,4 @@ jobs:
             --repo ${{ github.repository }} \
             --title "ReleaseBuilder ${{ github.ref_name }}" \
             --generate-notes \
-            ReleaseBuilder-win-x64/ReleaseBuilder-win-x64.zip \
-            ReleaseBuilder-osx-x64/ReleaseBuilder-osx-x64.zip \
-            ReleaseBuilder-osx-arm64/ReleaseBuilder-osx-arm64.zip \
-            ReleaseBuilder-linux-x64/ReleaseBuilder-linux-x64.zip
+            ReleaseBuilder-*/ReleaseBuilder-*.zip
