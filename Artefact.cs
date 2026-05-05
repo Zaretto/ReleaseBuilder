@@ -44,7 +44,7 @@ namespace ReleaseBuilder
         {
             DirectoryRemoveCount = directoryRemoveCount;
             Root = root;
-            PathName = match?.Replace("/", "\\") ?? "";
+            PathName = match?.Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar) ?? "";
             Type = ArtefactType.Match;
             DirectoryRemoveCount = directoryRemoveCount;
         }

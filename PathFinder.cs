@@ -25,6 +25,7 @@ namespace ReleaseBuilder
             {
                 return null;
             }
+            toFind = toFind.Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar);
             foreach (var path in paths)
             {
                 var dir = "";
@@ -57,6 +58,7 @@ namespace ReleaseBuilder
         {
             if (toFind == null)
                 return null;
+            toFind = toFind.Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar);
             foreach (var path in paths)
             {
                 var dir = "";
