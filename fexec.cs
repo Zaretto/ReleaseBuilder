@@ -29,7 +29,7 @@ namespace rjtool
             string workingDirectory,
             bool wait,
             bool useShellExecute,
-            IEnumerable<int> requiredExitCodes)
+            IEnumerable<int>? requiredExitCodes)
         {
             Process myProcess = new Process();
             myProcess.StartInfo.WorkingDirectory = workingDirectory;

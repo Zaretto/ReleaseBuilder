@@ -18,15 +18,15 @@ namespace ReleaseBuilder
         }
 
         public int DirectoryRemoveCount { get; }
-        public string Root { get; }
-        public string NewName { get; }
+        public string? Root { get; }
+        public string? NewName { get; }
 
         public string PathName;
         public DirectoryInfo? directoryInfo;
         public FileInfo? fileInfo;
 
         public ArtefactType Type;
-        public Artefact(FileInfo file, string newName)
+        public Artefact(FileInfo file, string? newName)
         {
             fileInfo = file;
             PathName = file.FullName;
@@ -40,11 +40,11 @@ namespace ReleaseBuilder
             Type = ArtefactType.Path;
         }
 
-        public Artefact(int directoryRemoveCount, string root, string match)
+        public Artefact(int directoryRemoveCount, string? root, string? match)
         {
             DirectoryRemoveCount = directoryRemoveCount;
             Root = root;
-            PathName = match.Replace("/", "\\");
+            PathName = match?.Replace("/", "\\") ?? "";
             Type = ArtefactType.Match;
             DirectoryRemoveCount = directoryRemoveCount;
         }
@@ -62,7 +62,7 @@ namespace ReleaseBuilder
             }
             return new[] { new FileDetails(0, Path.GetDirectoryName(PathName), PathName, NewName) };
         }
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
             var aobj = obj as Artefact;
             if (aobj != null)

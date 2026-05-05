@@ -5,20 +5,20 @@
         /// <summary>
         /// where the file was found
         /// </summary>
-        private string FilePath { get; }
+        private string? FilePath { get; }
         /// <summary>
         /// full path to the file.
         /// </summary>
         public string Name { get; }
 
-        public string NewFileName { get; }
-        public FileDetails(int skipCount, string path, string name, string newName)
+        public string? NewFileName { get; }
+        public FileDetails(int skipCount, string? path, string name, string? newName)
         {
             if (skipCount > 0)
             {
-                var n1 = name.Replace(path, "").TrimStart('\\');
-                var parts = Path.GetDirectoryName(n1).Replace('/', '\\').Split('\\').Take(skipCount);
-                FilePath = Path.Combine(path, string.Join("\\", parts));
+                var n1 = (path != null ? name.Replace(path, "") : name).TrimStart('\\');
+                var parts = (Path.GetDirectoryName(n1) ?? "").Replace('/', '\\').Split('\\').Take(skipCount);
+                FilePath = Path.Combine(path ?? "", string.Join("\\", parts));
             }
             else
                 FilePath = path;
@@ -30,7 +30,7 @@
             FilePath = path;
             Name = name;
         }
-        public override bool Equals(object obj)
+        public override bool Equals(object? obj)
         {
             var aobj = obj as FileDetails;
             if (aobj != null)
@@ -49,7 +49,7 @@
             if (!string.IsNullOrEmpty(NewFileName))
                 return NewFileName;
             else
-                return Name.Replace(FilePath, "").Trim("\\/".ToArray());
+                return Name.Replace(FilePath ?? "", "").Trim("\\/".ToArray());
         }
     }
 }
