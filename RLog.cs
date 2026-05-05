@@ -76,6 +76,11 @@ namespace ReleaseBuilder
             Format(LogMessageLevel.Fatal, message, args);
         }
 
+        public static void WarnFormat(string message, params object[] args)
+        {
+            Format(LogMessageLevel.Warn, message, args);
+        }
+
         public static void DebugFormat(string message, params object[] args)
         {
             Format(LogMessageLevel.Debug, message, args);
