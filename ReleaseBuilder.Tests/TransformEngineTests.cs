@@ -80,9 +80,23 @@ namespace ReleaseBuilder.Tests
         }
 
         [Fact]
+        public void Transform_GetVersion_ForwardSlashes()
+        {
+            var (_, engine) = Create();
+            Assert.Equal("1.2.3", engine.Transform("getversion,path/to/MyApp_1.2.3", "ignored"));
+        }
+
+        [Fact]
         public void Transform_GetVersion_With_Variable()
         {
             var (_, engine) = Create(("APPPATH", @"C:\builds\MyApp_4.5.6"));
+            Assert.Equal("4.5.6", engine.Transform("getversion,~APPPATH~", "ignored"));
+        }
+
+        [Fact]
+        public void Transform_GetVersion_With_Variable_ForwardSlashes()
+        {
+            var (_, engine) = Create(("APPPATH", "builds/MyApp_4.5.6"));
             Assert.Equal("4.5.6", engine.Transform("getversion,~APPPATH~", "ignored"));
         }
 

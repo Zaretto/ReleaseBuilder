@@ -22,7 +22,7 @@ namespace ReleaseBuilder
         /// </param>
         /// <returns></returns>
         /// <exception cref="Exception"></exception>
-        public static string? FindDirectory(string? toFind, List<String>[] paths)
+        public static string? FindDirectory(string? toFind, List<String>[] paths, bool required = true)
         {
             if (toFind == null)
             {
@@ -55,7 +55,9 @@ namespace ReleaseBuilder
 
                 }
             }
-            throw new Exception("Cannot locate " + toFind);
+            if (required)
+                throw new Exception("Cannot locate " + toFind);
+            return null;
         }
         public static string? FindFile(string? toFind, List<String>[] paths)
         {

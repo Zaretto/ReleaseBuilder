@@ -409,7 +409,7 @@ namespace ReleaseBuilder
                                         new List<string>(new []{path,newPathAttribute}),
                                         new List<string>(new []{Root}),
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
-                                    });
+                                    }, required: false);
                                 if (string.IsNullOrEmpty(cleanFolder))
                                 {
                                     RLog.WarnFormat("clean: folder not found, skipping — {0}", GetAttribute(actionNode, "folder", ""));
