@@ -62,7 +62,7 @@ namespace ReleaseBuilder
 
             fexec.AddExePath(ToolsDirectories);
 
-            var baseConfig = "ReleaseConfig.Xml";
+            var baseConfig = "ReleaseConfig.xml";
             var cpath = baseConfig;
 
             /// 1. if file specified on the command line then use this.
