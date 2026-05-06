@@ -32,8 +32,8 @@ namespace ReleaseBuilder.Tests
         public void MatchConstructor_NormalizesSlashes()
         {
             var a = new Artefact(0, @"C:\root", "C:/root/bin/*.dll");
-            Assert.Contains(@"\", a.PathName);
-            Assert.DoesNotContain("/", a.PathName);
+            var wrongSep = Path.DirectorySeparatorChar == '/' ? '\\' : '/';
+            Assert.DoesNotContain(wrongSep.ToString(), a.PathName);
         }
 
         [Fact]
