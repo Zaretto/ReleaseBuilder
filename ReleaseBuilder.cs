@@ -1021,6 +1021,7 @@ namespace ReleaseBuilder
                                 }
                                 else
                                 {
+                                    target.Path.Create();
                                     RLog.TraceFormat(String.Format("Copy {0} (from {1})", outputFileName, Path.GetFileName(file.Name)));
                                     File.Copy(file.Name, outputFileName, true);
                                     Manifest.Artefacts.Add(new ManifestEntry
@@ -1040,6 +1041,7 @@ namespace ReleaseBuilder
         private static string CreateZipFileArtefact(IEnumerable<FileDetails> files, PublishTarget target, List<string> filename)
         {
             int fileCount = 0;
+            target.Path.Create();
             var zipFileName = Path.Combine(target.Path.FullName, string.Join("-", filename) + ".zip");
             File.Delete(zipFileName);
             using (FileStream zipToOpen = new FileStream(zipFileName, FileMode.Create))

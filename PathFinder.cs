@@ -10,6 +10,9 @@ namespace ReleaseBuilder
 {
     public class PathFinder
     {
+        public static string NormalizeSeparators(string path)
+            => path.Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar);
+
         /// <summary>
         /// find a directory somewhere in a list of paths.
         /// </summary>
@@ -25,7 +28,7 @@ namespace ReleaseBuilder
             {
                 return null;
             }
-            toFind = toFind.Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar);
+            toFind = NormalizeSeparators(toFind);
             foreach (var path in paths)
             {
                 var dir = "";
@@ -58,7 +61,7 @@ namespace ReleaseBuilder
         {
             if (toFind == null)
                 return null;
-            toFind = toFind.Replace('\\', '/').Replace('/', Path.DirectorySeparatorChar);
+            toFind = NormalizeSeparators(toFind);
             foreach (var path in paths)
             {
                 var dir = "";

@@ -16,9 +16,9 @@
         {
             if (skipCount > 0)
             {
-                var n1 = (path != null ? name.Replace(path, "") : name).TrimStart('\\');
-                var parts = (Path.GetDirectoryName(n1) ?? "").Replace('/', '\\').Split('\\').Take(skipCount);
-                FilePath = Path.Combine(path ?? "", string.Join("\\", parts));
+                var n1 = (path != null ? name.Replace(path, "") : name).TrimStart(Path.DirectorySeparatorChar);
+                var parts = (Path.GetDirectoryName(n1) ?? "").Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar).Take(skipCount);
+                FilePath = Path.Combine(path ?? "", Path.Combine(parts.ToArray()));
             }
             else
                 FilePath = path;

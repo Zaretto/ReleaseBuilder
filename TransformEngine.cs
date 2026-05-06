@@ -28,7 +28,7 @@ namespace ReleaseBuilder
                         {
                             ArgCheck(parts, 2, transformation);
                             v = ExpandVars(parts[1])!;
-                            var vp = v.Split('\\');
+                            var vp = v.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                             v = vp.Last();
                             var rv = Regex.Match(v, @"\d+.+\d");
                             if (rv != null)

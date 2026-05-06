@@ -9,7 +9,7 @@ namespace ReleaseBuilder.Tests
         public void GetArchiveName_NoRename()
         {
             var fd = new FileDetails(0, @"C:\project", @"C:\project\bin\app.exe", "");
-            Assert.Equal(@"bin\app.exe", fd.GetArchiveName());
+            Assert.Equal(Path.Combine("bin", "app.exe"), fd.GetArchiveName());
         }
 
         [Fact]
@@ -23,7 +23,7 @@ namespace ReleaseBuilder.Tests
         public void GetArchiveName_TwoArgConstructor()
         {
             var fd = new FileDetails(@"C:\project", @"C:\project\output\file.txt");
-            Assert.Equal(@"output\file.txt", fd.GetArchiveName());
+            Assert.Equal(Path.Combine("output", "file.txt"), fd.GetArchiveName());
         }
 
         [Fact]
