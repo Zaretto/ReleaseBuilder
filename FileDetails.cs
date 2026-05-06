@@ -49,7 +49,7 @@
             if (!string.IsNullOrEmpty(NewFileName))
                 return NewFileName;
             else
-                return Name.Replace(FilePath ?? "", "").Trim("\\/".ToArray());
+                return PathFinder.NormalizeSeparators(Name.Replace(FilePath ?? "", "").Trim("\\/".ToArray()));
         }
     }
 }
