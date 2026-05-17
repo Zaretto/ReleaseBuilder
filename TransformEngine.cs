@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
@@ -16,7 +17,10 @@ namespace ReleaseBuilder
         {
             if (string.IsNullOrEmpty(transformation))
                 return v;
-            var parts = transformation.Split(',');
+            // \, in the transform string is a literal comma (not an argument separator).
+            const string CommaEscapePlaceholder = "\x01\x02\x01";
+            var normalized = transformation.Replace("\\,", CommaEscapePlaceholder);
+            var parts = normalized.Split(',').Select(p => p.Replace(CommaEscapePlaceholder, ",")).ToArray();
             if (parts.Length >= 1)
             {
                 var method = parts[0];

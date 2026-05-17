@@ -946,6 +946,10 @@ namespace ReleaseBuilder
                         addvar(property.Name, val);
                 }
 
+                addvar("Major", (long?)Info.Major);
+                addvar("Minor", (long?)Info.Minor);
+                addvar("Patch", (long?)Info.Patch);
+                addvar("MsiMajor", (long?)(Info.Major - 2000));
             }
         }
 
