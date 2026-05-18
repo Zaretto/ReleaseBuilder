@@ -349,7 +349,9 @@ Recursively invokes ReleaseBuilder on a nested configuration file, enabling modu
 <ReleaseBuilder name="module_name"
                 folder="subfolder"
                 file="config_file.xml"
-                process="true|false" />
+                process="true|false">
+  <Set name="VAR_NAME" value="value" />
+</ReleaseBuilder>
 ```
 
 **Attributes:**
@@ -362,15 +364,19 @@ Recursively invokes ReleaseBuilder on a nested configuration file, enabling modu
 | `process` | No | Whether to process artifacts (default: `false`) |
 | `active` | No | Condition expression — skips this element when the expression evaluates to empty. Supports the same `when,~VAR~,==,value` syntax as `<Artefacts active="...">`. |
 
+**Child Elements:**
+- `<Set name="..." value="...">` — Inject a variable into the child config's variable store. Values are expanded using the parent's variables before injection, so `~PARENT_VAR~` references in a `value` attribute are resolved at the parent level. Multiple `<Set>` elements are allowed.
+
 **How Configuration Chaining Works:**
 
 The `<ReleaseBuilder>` element enables building complex multi-component projects by chaining configurations together:
 
 1. **Changes directory** to the specified `folder`
 2. **Loads** the ReleaseConfig.xml in that folder (or specified `file`)
-3. **Executes** that configuration completely (recursive invocation)
-4. **Collects artifacts** if `process="true"`
-5. **Returns** to parent directory and continues
+3. **Injects** any `<Set>` variables into the child's variable store
+4. **Executes** that configuration completely (recursive invocation)
+5. **Collects artifacts** if `process="true"`
+6. **Returns** to parent directory and continues
 
 **Module Filtering:**
 
@@ -560,37 +566,38 @@ Execution hierarchy: `Main → ProductA → (API, UI, Worker)`
 | Behavior | Description |
 |----------|-------------|
 | **Target Inheritance** | Nested configs use the same `--target` name as parent |
-| **Variable Inheritance** | **All variables ARE inherited** from parent to child |
-| **Set Variables Inherited** | `<Set>` variables from parent's active Target are passed to children |
+| **Variable Inheritance** | Child receives all parent variables as a starting set |
+| **Set Override** | `<Set>` children on `<ReleaseBuilder>` add new vars or override inherited ones |
+| **Built-ins Re-derived** | `~TYPE~`, `~PUBLISHROOT~`, `~OS~`, `~ARCH~`, `~RUNTIME~`, and GitVersion vars are re-derived in the child, overriding any inherited values for those keys |
 | **Target Override** | Child can define its own `<Target>` to change output path/type |
 | **Module Filtering** | Applied at each nesting level |
 | **Working Directory** | Each config executes in its own folder |
 | **Error Propagation** | If any nested build fails, entire build fails |
 
-**Variable Inheritance:**
+**Variable Availability in Child Configs:**
 
-When parent chains to child, the child inherits:
-- All `<Folder>` variables from parent
-- All `<Set>` variables from parent's active `<Target>`
-- All GitVersion variables (`~SemVer~`, `~Major~`, etc.)
-- All built-in variables (`~TYPE~`, `~PUBLISHROOT~`, etc.)
+Each child config starts with a variable store that is the union of:
+- All **variables from the parent** at the point the `<ReleaseBuilder>` element is reached — including `<Folder>` variables, active `<Target><Set>` variables, and GitVersion variables
+- Any variables **added or overridden** by `<Set>` children on the `<ReleaseBuilder>` element
 
-This allows you to define common configuration in the parent (like environment URLs, database servers, feature flags) and have all children use those same values.
+After that base is established, the child then re-derives its own **built-in variables** (`~TYPE~`, `~PUBLISHROOT~`, `~OS~`, `~ARCH~`, `~RUNTIME~`) and **GitVersion variables** from its own context, which override any inherited values for those same keys. This ensures PUBLISHROOT always reflects the child's own directory.
+
+The child's own `<Folder>` elements and active `<Target><Set>` elements are applied last and can override anything.
 
 **Target Override:**
 
 Children can override the parent's `<Target>` to use different output paths. This is common when building multiple platform artifacts:
 
 ```xml
-<!-- Parent sets default target -->
-<Target name="production" path="releases/api" type="zip">
+<!-- Parent: passes ENV to child via <Set> and uses different output path -->
+<ReleaseBuilder folder="AndroidApp" process="true">
   <Set name="ENV" value="production" />
-</Target>
+</ReleaseBuilder>
 
-<!-- Child can override to use different path -->
 <!-- AndroidApp/ReleaseConfig.xml -->
+<!-- Child overrides the output path for this target -->
 <Target name="production" path="releases/android" type="folder" />
-<!-- Still inherits ENV variable! -->
+<!-- ENV is available because the parent injected it via <Set> -->
 ```
 
 **process Attribute:**
@@ -621,9 +628,9 @@ Common scenario: Building both a web API and mobile app that need different outp
     <Set name="ENABLE_ANALYTICS" value="false" />
   </Target>
 
-  <!-- Build both components -->
-  <ReleaseBuilder folder="WebAPI" process="true" />
-  <ReleaseBuilder folder="AndroidApp" process="true" />
+  <!-- Both children inherit ENV, API_URL, DB_SERVER, ENABLE_ANALYTICS automatically -->
+  <ReleaseBuilder folder="WebAPI"      process="true" />
+  <ReleaseBuilder folder="AndroidApp"  process="true" />
 </ReleaseConfig>
 
 <!-- WebAPI/ReleaseConfig.xml -->
@@ -631,14 +638,10 @@ Common scenario: Building both a web API and mobile app that need different outp
   <Name>WebAPI</Name>
 
   <!-- No Target defined - uses parent's Target -->
-  <!-- For production: outputs to releases/api/MobileAppSolution-1.2.3.zip -->
-
-  <!-- Inherits all parent variables:
-       ENV, API_URL, DB_SERVER, ENABLE_ANALYTICS, SemVer, etc. -->
+  <!-- ENV, API_URL, DB_SERVER, ENABLE_ANALYTICS inherited from parent -->
 
   <Artefacts>
     <build>
-      <!-- Use inherited variables in config -->
       <create file="appsettings.Production.json">
 {
   "Environment": "~ENV~",
@@ -663,16 +666,14 @@ Common scenario: Building both a web API and mobile app that need different outp
 <ReleaseConfig>
   <Name>AndroidApp</Name>
 
-  <!-- Override Target - APK goes to different location -->
+  <!-- Override Target — APK goes to a different location -->
   <Target name="production" path="releases/android" type="folder" />
   <Target name="staging" path="releases/android-staging" type="folder" />
 
-  <!-- STILL inherits all parent variables! -->
-  <!-- ENV, API_URL, DB_SERVER, ENABLE_ANALYTICS are available -->
+  <!-- ENV, API_URL, ENABLE_ANALYTICS inherited from parent -->
 
   <Artefacts>
     <build>
-      <!-- Generate Android config using parent variables -->
       <create file="app/src/main/assets/config.properties">
 environment=~ENV~
 apiUrl=~API_URL~
@@ -681,9 +682,6 @@ version=~SemVer~
 versionCode=~Major~~Minor~~Patch~
       </create>
 
-      <!-- Build would happen here via gradle or other tool -->
-
-      <!-- Copy the built APK -->
       <copy from="../mobile/Android/app/release/app-release.apk"
             to="."
             name="MyApp-~ENV~-~SemVer~.apk" />
@@ -692,29 +690,86 @@ versionCode=~Major~~Minor~~Patch~
 </ReleaseConfig>
 ```
 
-**Build Commands:**
-```bash
-# Build for production
-ReleaseBuilder --target production
+**Key Benefits:**
+1. **Single source of truth** - Define `ENV`, `API_URL`, etc. once in the parent's `<ReleaseBuilder>` elements
+2. **Consistent configuration** - All components receive the same environment values
+3. **Flexible output** - Each component can go to its appropriate location
+4. **Environment switching** - Change `--target` to switch entire solution
 
-# Results:
-# - WebAPI → releases/api/MobileAppSolution-1.2.3.zip
-# - AndroidApp → releases/android/MyApp-production-1.2.3.apk
-# Both use same ENV, API_URL, etc. from parent
+---
 
-# Build for staging
-ReleaseBuilder --target staging
+**Example 7: Single Config for Multiple Architectures**
 
-# Results:
-# - WebAPI → releases/staging/ (folder)
-# - AndroidApp → releases/android-staging/MyApp-staging-1.2.3.apk
+Use one child config file for x86 and x64 builds by injecting arch-specific variables. The child uses `<Artefacts active="...">` to gate arch-specific sections.
+
+```xml
+<!-- Main: ReleaseConfig.xml -->
+<ReleaseConfig>
+  <Name>MyProduct</Name>
+
+  <Target name="live" path="releases" type="zip" archive-version="~SemVer~" />
+
+  <!-- Both devkit entries point to the same config file -->
+  <ReleaseBuilder name="DevkitX86" file="ReleaseConfigDevkit.xml" process="true">
+    <Set name="BUILD_DIR"   value="Release" />
+    <Set name="DEVKIT_ARCH" value="x86" />
+  </ReleaseBuilder>
+  <ReleaseBuilder name="DevkitX64" file="ReleaseConfigDevkit.xml" process="true">
+    <Set name="BUILD_DIR"   value="Release64" />
+    <Set name="DEVKIT_ARCH" value="x64" />
+  </ReleaseBuilder>
+</ReleaseConfig>
+
+<!-- ReleaseConfigDevkit.xml — shared template for both architectures -->
+<ReleaseConfig>
+  <Name>MyProduct-devkit</Name>
+
+  <!-- Standalone targets set BUILD_DIR/DEVKIT_ARCH via <Set> -->
+  <Target name="x86" path="." type="zip" archive-version="~TYPE~-~SemVer~">
+    <Set name="BUILD_DIR"   value="Release" />
+    <Set name="DEVKIT_ARCH" value="x86" />
+  </Target>
+  <Target name="x64" path="." type="zip" archive-version="~TYPE~-~SemVer~">
+    <Set name="BUILD_DIR"   value="Release64" />
+    <Set name="DEVKIT_ARCH" value="x64" />
+  </Target>
+
+  <!-- When chained from master, BUILD_DIR/DEVKIT_ARCH come from parent <Set> -->
+  <Target name="live" path="." type="zip" archive-version="~DEVKIT_ARCH~-~SemVer~" />
+
+  <!-- Shared build steps use ~BUILD_DIR~ -->
+  <Artefacts>
+    <build>
+      <copy from="~BUILD_DIR~\MyLib.dll" to="staging" />
+      <!-- ...more shared files... -->
+    </build>
+  </Artefacts>
+
+  <!-- x86-only section -->
+  <Artefacts active="when,~DEVKIT_ARCH~,==,x86">
+    <build>
+      <copy from="~BUILD_DIR~\MyLib.ocx" to="staging" />
+    </build>
+  </Artefacts>
+
+  <!-- x64-only section -->
+  <Artefacts active="when,~DEVKIT_ARCH~,==,x64">
+    <build>
+      <copy from="~BUILD_DIR~\x64" to="staging\x64" recursive="true" />
+    </build>
+  </Artefacts>
+
+  <Artefacts>
+    <folder skip-directories-front="1">staging</folder>
+  </Artefacts>
+</ReleaseConfig>
 ```
 
-**Key Benefits:**
-1. **Single source of truth** - Define `ENV`, `API_URL`, etc. once in parent
-2. **Consistent configuration** - All components use same environment values
-3. **Flexible output** - Each component can go to appropriate location
-4. **Environment switching** - Change `--target` to switch entire solution
+Standalone usage (after compile):
+```bash
+release-builder -c ReleaseConfigDevkit.xml -t x86
+release-builder -c ReleaseConfigDevkit.xml -t x64
+```
 
 **See Also:**
 - [User Guide: Multi-Component Tutorial](User-Guide.md#tutorial-3-multi-component-application-with-chaining)

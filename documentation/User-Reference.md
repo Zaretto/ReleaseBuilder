@@ -927,7 +927,7 @@ Alternative syntax for defining individual artifacts.
 
 **Parent:** `<ReleaseConfig>` or `<build>`
 **Occurrence:** 0 or more
-**Content:** Empty
+**Content:** Zero or more `<Set>` child elements
 
 Recursively invokes ReleaseBuilder on a nested configuration, enabling modular builds.
 
@@ -939,7 +939,9 @@ Recursively invokes ReleaseBuilder on a nested configuration, enabling modular b
                 folder="subfolder"
                 file="config_filename"
                 process="true|false"
-                nobuild="true|false" />
+                nobuild="true|false">
+  <Set name="VAR_NAME" value="value" />
+</ReleaseBuilder>
 ```
 
 **Attributes:**
@@ -980,6 +982,15 @@ If `name` is specified and `file` is not, tries `ReleaseConfig{name}.xml` first.
 **Type:** Boolean
 **Default:** Inherits from parent or command-line
 **Purpose:** Skip build actions in nested configuration
+
+##### Set (child element, optional, repeatable)
+
+**Syntax:** `<Set name="VAR_NAME" value="value" />`
+**Purpose:** Inject a variable into the child config's variable store
+
+The `value` attribute is expanded using the parent's variables before being passed to the child, so parent variable references like `~PARENT_VAR~` in a `value` string are resolved at the parent level. Multiple `<Set>` elements are allowed and all are injected.
+
+Variables injected this way are available throughout the child config — in paths, `active` conditions, `<create>` content, `archive-version`, and anywhere else variables are expanded.
 
 **Examples:**
 
@@ -1044,10 +1055,11 @@ The `<ReleaseBuilder>` element implements configuration chaining by recursively 
 
 | Aspect | Behavior |
 |--------|----------|
-| **Target inheritance** | Child inherits parent's `--target` name (e.g., `production`, `dev`) |
-| **Variable inheritance** | **Variables ARE inherited** from parent to child |
+| **Target inheritance** | Child uses the same `--target` name as the parent |
+| **Variable inheritance** | Child starts with all parent variables as a base |
+| **Set override** | `<Set>` children on `<ReleaseBuilder>` add new vars or override inherited ones |
+| **Built-ins re-derived** | `~TYPE~`, `~PUBLISHROOT~`, `~OS~`, `~ARCH~`, `~RUNTIME~`, and GitVersion vars are re-derived in the child, overriding any inherited values for those keys |
 | **Target override** | Child can define own `<Target>` to change output path |
-| **Set variables** | `<Set>` variables from parent's active Target are inherited |
 | **Module filtering** | Applied at each nesting level based on `<Name>` element |
 | **Working directory** | Each config runs in its own folder context |
 | **Error handling** | Any failure stops entire build chain |
@@ -1079,41 +1091,39 @@ Main ReleaseConfig.xml
 └─ Create final package (Main + API + Frontend artifacts)
 ```
 
-**Variable Inheritance Example:**
+**Variable Inheritance and Override Example:**
 
 ```xml
-<!-- Main config -->
+<!-- Main config — Target <Set> vars are inherited by all children automatically.
+     Use <Set> on <ReleaseBuilder> only to add new vars or override specific ones. -->
 <ReleaseConfig>
   <Name>Main</Name>
 
-  <Folder name="BUILD_PATH" path="builds/*" version="latest" />
-
   <Target name="production" path="releases" type="zip">
-    <Set name="ENV" value="production" />
-    <Set name="API_URL" value="https://api.example.com" />
+    <Set name="ENV"       value="production" />
+    <Set name="API_URL"   value="https://api.example.com" />
     <Set name="DB_SERVER" value="prod-db.example.com" />
   </Target>
 
+  <!-- Children inherit ENV, API_URL, DB_SERVER automatically -->
   <ReleaseBuilder folder="API" process="true" />
-  <ReleaseBuilder folder="Worker" process="true" />
+
+  <!-- Worker overrides DB_SERVER only; still inherits ENV and API_URL -->
+  <ReleaseBuilder folder="Worker" process="true">
+    <Set name="DB_SERVER" value="worker-db.example.com" />
+  </ReleaseBuilder>
 </ReleaseConfig>
 
 <!-- Child: API/ReleaseConfig.xml -->
 <ReleaseConfig>
   <Name>API</Name>
 
-  <!-- Inherits from parent:
-       - ~BUILD_PATH~ variable
-       - ~ENV~ = "production"
-       - ~API_URL~ = "https://api.example.com"
-       - ~DB_SERVER~ = "prod-db.example.com"
-       - All GitVersion variables
-       - All built-in variables
-  -->
+  <!-- ENV, API_URL, DB_SERVER inherited from parent.
+       Built-ins (PUBLISHROOT, TYPE, OS, etc.) and GitVersion vars
+       are re-derived from the child's own context. -->
 
   <Artefacts>
     <build>
-      <!-- Can use ALL parent variables -->
       <create file="appsettings.json">
 {
   "Environment": "~ENV~",
@@ -1131,7 +1141,7 @@ Main ReleaseConfig.xml
 
 **Target Override Example:**
 
-Child configs can override the parent's Target to use different output paths:
+Child configs can override the parent's Target to use different output paths. Parent variables are inherited automatically.
 
 ```xml
 <!-- Parent -->
@@ -1139,21 +1149,21 @@ Child configs can override the parent's Target to use different output paths:
   <Name>MobileAppSuite</Name>
 
   <Target name="production" path="releases/api" type="zip">
-    <Set name="ENV" value="production" />
+    <Set name="ENV"     value="production" />
     <Set name="API_URL" value="https://api.example.com" />
   </Target>
 
-  <ReleaseBuilder folder="WebAPI" process="true" />
-  <ReleaseBuilder folder="AndroidApp" process="true" />
+  <!-- Both children inherit ENV and API_URL automatically -->
+  <ReleaseBuilder folder="WebAPI"      process="true" />
+  <ReleaseBuilder folder="AndroidApp"  process="true" />
 </ReleaseConfig>
 
 <!-- Child: WebAPI/ReleaseConfig.xml -->
 <ReleaseConfig>
   <Name>WebAPI</Name>
 
-  <!-- No Target defined - uses parent's Target -->
-  <!-- Output: releases/api/MobileAppSuite-1.2.3.zip -->
-  <!-- Inherits: ~ENV~, ~API_URL~ -->
+  <!-- No Target defined — uses parent's target path (releases/api) -->
+  <!-- ENV, API_URL available via inheritance -->
 
   <Artefacts>
     <build>
@@ -1166,15 +1176,13 @@ Child configs can override the parent's Target to use different output paths:
 <ReleaseConfig>
   <Name>AndroidApp</Name>
 
-  <!-- Override Target - Android APK goes to different location -->
+  <!-- Override Target — APK goes to a different location -->
   <Target name="production" path="releases/android" type="folder" />
 
-  <!-- STILL inherits variables: ~ENV~, ~API_URL~ -->
-  <!-- Output: releases/android/ (folder, not zip) -->
+  <!-- ENV, API_URL still available via inheritance -->
 
   <Artefacts>
     <build>
-      <!-- Use inherited variables in Android config -->
       <create file="config.properties">
 env=~ENV~
 apiUrl=~API_URL~
@@ -1190,15 +1198,7 @@ version=~SemVer~
 **Result:**
 - WebAPI uses parent Target → ZIP at `releases/api/MobileAppSuite-1.2.3.zip`
 - AndroidApp overrides Target → Folder at `releases/android/`
-- Both can access parent's `~ENV~` and `~API_URL~` variables
-
-**Common Use Case - API and Mobile App:**
-
-This is common when building both a web API and mobile apps:
-- WebAPI → Packaged as ZIP for server deployment
-- Android APK → Goes to separate folder for app store upload
-- iOS IPA → Goes to another separate folder
-- All share same environment configuration from parent
+- Both inherit `~ENV~` and `~API_URL~` from the parent automatically
 
 **Nested Chaining:**
 

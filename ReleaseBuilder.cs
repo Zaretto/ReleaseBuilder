@@ -39,8 +39,12 @@ namespace ReleaseBuilder
         public Dictionary<string, bool> Modules { get; private set; } = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         public FileInfo? ConfigFile { get; }
 
-        public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild, bool useShellExecute, bool dryRun = false)
+        private readonly List<KeyValuePair<string, string>> _initialVars = new();
+
+        public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild, bool useShellExecute, bool dryRun = false, IEnumerable<KeyValuePair<string, string>>? initialVars = null)
         {
+            if (initialVars != null)
+                _initialVars.AddRange(initialVars);
             ToolsDirectories = new List<DirectoryInfo>();
             if (toolsdir != null)
                 ToolsDirectories.AddRange(toolsdir);
@@ -88,6 +92,10 @@ namespace ReleaseBuilder
         private bool Built { get; set; }
         public bool Build()
         {
+            // Inherited vars applied first so child's own built-ins override them.
+            foreach (var kv in _initialVars)
+                addvar(kv.Key, kv.Value);
+
             addvar("TYPE", PublishType);
             addvar("PUBLISHROOT", Root);
 
@@ -121,7 +129,7 @@ namespace ReleaseBuilder
             {
                 if (node.Name == "Name")
                 {
-                    TargetName = node.Value;
+                    TargetName = _transform.ExpandVars(node.Value);
                     if (Modules.Any() && !Modules.Any(xx=> TargetName.ToLower().Contains(xx.Key.ToLower())))
                     {
                         RLog.InfoFormat("Not building {0} because not in modules", TargetName);
@@ -357,16 +365,21 @@ namespace ReleaseBuilder
             if (CheckParamNotEmpty(fromPath, String.Format("ReleaseBuilder: folder is required and must point to a valid directory ({0})", folderAttribute))
             && CheckParamNotEmpty(fileAttribute, String.Format("ReleaseBuilder: file is required and must point to a valid directory {0}", fileAttribute)))
             {
+                // Build initial vars for child: parent's full store (inherited) then
+                // <Set> children (can add new vars or override inherited ones).
+                var childInitialVars = vars.All
+                    .Concat(ReadSetElements(node))
+                    .ToList();
+
                 RLog.InfoFormat("Build release from {0}", fromFile);
                 var currentFolder = Directory.GetCurrentDirectory();
 
                 try
                 {
-                    //                public ReleaseBuilder(DirectoryInfo? root, FileInfo? configFile, string? target, IEnumerable<DirectoryInfo> toolsdir, bool nobuild)
                     var newRoot = new DirectoryInfo(fromPath);
                     Directory.SetCurrentDirectory(newRoot.FullName);
                     var newConfigFile = new FileInfo(fromFile);
-                    var rb = new ReleaseBuilder(newRoot, newConfigFile, PublishType, ToolsDirectories, noBuildAttribute, UseShellExecute, DryRun);
+                    var rb = new ReleaseBuilder(newRoot, newConfigFile, PublishType, ToolsDirectories, noBuildAttribute, UseShellExecute, DryRun, childInitialVars);
                     rb.Build();
                     if (processAttribute)
                         rb.Process();
@@ -380,6 +393,17 @@ namespace ReleaseBuilder
                     Directory.SetCurrentDirectory(currentFolder);
                 }
                 RLog.InfoFormat("Finished building {0}", fromFile);
+            }
+        }
+
+        private IEnumerable<KeyValuePair<string, string>> ReadSetElements(XElement node)
+        {
+            foreach (var n in node.Elements("Set"))
+            {
+                var name = GetAttribute(n, "name", "");
+                var value = _transform.ExpandVars(GetAttribute(n, "value", ""));
+                if (!string.IsNullOrEmpty(name))
+                    yield return new KeyValuePair<string, string>(name, value);
             }
         }
 
