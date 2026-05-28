@@ -16,7 +16,7 @@ namespace ReleaseBuilder
         {
             this.Name = name;
             if (path != null)
-                this.Path = Directory.CreateDirectory(path);
+                this.Path = Directory.CreateDirectory(PathFinder.NormalizeSeparators(path));
             else
                 throw new Exception(string.Format("PublishTarget: {0} path not found", name));
 

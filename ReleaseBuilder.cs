@@ -180,7 +180,7 @@ namespace ReleaseBuilder
                 if (node.Name == "Folder")
                 {
                     //    <Folder name="APPPATH" path="MSOS.UWP_*" version="latest" />
-                    var name = GetFilePathAttribute(node, "name");
+                    var name = GetAttribute<string>(node, "name");
                     var versionName = GetAttribute<string>(node, "name-version");
                     var path = GetFilePathAttribute(node, "path");
                     var version = GetAttribute(node, "version", "latest");
@@ -288,7 +288,7 @@ namespace ReleaseBuilder
                     var rootAttribute = node.Attribute("root");
                     var artefactRoot = Root;
                     if (rootAttribute != null)
-                        artefactRoot = rootAttribute.Value;
+                        artefactRoot = PathFinder.NormalizeSeparators(rootAttribute.Value);
                     processAttributes(node, "file", (file) =>
                     {
                         file = AddFile(GetAttribute<int>(node, "skip-directories-front"), artefactRoot, file, GetAttribute(node, "newname", ""));
@@ -500,7 +500,9 @@ namespace ReleaseBuilder
                                         case "node":
                                         case "attribute":
                                             {
-                                                var pathSelector = GetFilePathAttribute(editNode, "path");
+                                                // XPath selector — must NOT be separator-normalised (a '\' inside
+                                                // a predicate string literal is data, not a path separator).
+                                                var pathSelector = GetAttribute<string>(editNode, "path");
                                                 var nodeAction = GetAttribute<string>(editNode, "action");
                                                 // XPathEvaluate returns IEnumerable<object> (not IEnumerable<XObject>)
                                                 // for node-set results; items are XAttribute or XElement at runtime.
@@ -596,7 +598,7 @@ namespace ReleaseBuilder
                             var transform = GetAttribute(actionNode, "transform", "");
                             var transformContents = actionNode.Elements("transform-content");
                             var match = GetAttribute(actionNode, "match", "*.*")!;
-                            var toPath = _transform.ExpandVars(GetAttribute(actionNode, "to", ""));
+                            var toPath = _transform.ExpandVars(GetFilePathAttribute(actionNode, "to"));
                             if (!string.IsNullOrEmpty(toPath))
                             {
                                 toPath = Path.Combine(path, toPath);
