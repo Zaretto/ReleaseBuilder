@@ -7,17 +7,18 @@ This document provides comprehensive documentation for the ReleaseConfig.xml for
 1. [Overview](#overview)
 2. [Root Element](#root-element)
 3. [Variable Substitution](#variable-substitution)
-4. [Built-in Variables](#built-in-variables)
-5. [Elements Reference](#elements-reference)
+4. [Secret Redaction](#secret-redaction)
+5. [Built-in Variables](#built-in-variables)
+6. [Elements Reference](#elements-reference)
    - [Name](#name)
    - [Folder](#folder)
    - [Target](#target)
    - [Artefacts](#artefacts)
    - [Artefact](#artefact)
    - [ReleaseBuilder](#releasebuilder)
-6. [Build Actions](#build-actions)
-7. [Transform Functions](#transform-functions)
-8. [Examples](#examples)
+7. [Build Actions](#build-actions)
+8. [Transform Functions](#transform-functions)
+9. [Examples](#examples)
 
 ## Overview
 
@@ -71,6 +72,30 @@ The name of an environment variable may itself contain `~VARIABLE~` references, 
 The name must start with a literal character (`$~TYPE~` remains a literal `$` followed by the variable), and if the composed name is not defined the literal part of the name is used instead, with the `~VARIABLE~` expanded separately. Environment variable names are case-sensitive on Linux and macOS.
 
 Substitution is a single left-to-right pass: `~` and `$` characters inside a substituted value are literal text and are not expanded again.
+
+## Secret Redaction
+
+A `<Set>` marked `secret="true"` registers its value with the logger, which then replaces every occurrence of that value with `***` in all output — variable values, `[dry-run] Would exec` lines, the command line in an `<exec>` failure message, and captured process output:
+
+```xml
+<Target name="live" path="releases" type="zip">
+  <Set name="API_KEY"     value="$PROJ_PORTAL_~TYPE~" secret="true" />
+  <Set name="MACHINE_KEY" transform="random-key,32" />
+</Target>
+```
+
+```
+[DEBUG] API_KEY=***
+[ INFO] [dry-run] Would exec: dotnet nuget push --api-key ***
+```
+
+- Matching is by value, not by variable name, so a secret is hidden everywhere it appears.
+- Values shorter than 8 characters are not registered, to avoid blanking unrelated text.
+- `random-key` output is registered automatically; `secret="true"` is not needed for it.
+- Registration is process-wide and so covers nested `<ReleaseBuilder>` builds.
+- Use a marked `<Set>` rather than `$ENV_VAR` directly in an `<exec>` argument — an unregistered value cannot be redacted.
+- Artefact contents are not redacted; writing the secret into the package is the point of the variable.
+- Under GitHub Actions (`GITHUB_ACTIONS=true`) each secret is also emitted as a `::add-mask::` command so the runner masks it in other steps' output.
 
 ## Built-in Variables
 
@@ -242,6 +267,7 @@ Defines a deployment target with output configuration.
 | `name` | Yes | Variable name (referenced as `~name~`) |
 | `value` | No | Value; variable and environment references are expanded when the target becomes active |
 | `transform` | No | Transform applied to `value` to produce the variable, e.g. `random-key,32` |
+| `secret` | No | `true` replaces the value with `***` in all log output — see [Secret Redaction](#secret-redaction) |
 
 **Example:**
 ```xml
@@ -1291,7 +1317,7 @@ A new key is produced every time the transform is evaluated, so assign it to a v
 **Notes:**
 - Uses the platform cryptographic random number generator; characters are chosen without bias.
 - `ascii` includes characters such as `$`, `&`, `<` and `"` that may need escaping in the file the key is written to; `alnum` (the default) avoids that.
-- The generated value is written to the debug log like any other variable, so avoid `--verbose` debug output on builds whose logs are kept.
+- Generated keys are registered for [secret redaction](#secret-redaction) automatically, so they appear in the log as `***` (keys shorter than 8 characters are not registered).
 - A literal charset that includes a comma must escape it as `\,`, since commas separate transform arguments.
 
 ---

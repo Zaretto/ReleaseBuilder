@@ -16,7 +16,7 @@ A cross-platform .NET 8.0 build automation tool that uses XML configuration file
   - Archive creation (ZIP)
 - **Modular Builds**: Selective module building with `--module` flag
 - **Variable Substitution**: Dynamic variable expansion in configuration files
-- **Build-Time Secrets**: `random-key` transform generates cryptographically random keys of any length
+- **Build-Time Secrets**: `random-key` transform generates cryptographically random keys of any length; `<Set secret="true">` keeps values out of the build log (and masks them in GitHub Actions)
 - **Verbose Logging**: Multiple verbosity levels for debugging
 
 ## Quick Start
@@ -224,6 +224,7 @@ The `ReleaseBuilder.Tests` project tests the following components:
 - **FileDetails** — archive name generation, path manipulation
 - **OutputSink** — process output line buffering and thread safety
 - **Artefact** — artifact type detection, equality, path normalisation
+- **RLog** — error counting and secret redaction in log output
 
 ## License
 

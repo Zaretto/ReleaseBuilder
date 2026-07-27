@@ -1320,8 +1320,11 @@ Available character sets are `alnum` (default), `alpha`, `numeric`, `hex`, `base
 `random-key,6,0123456789` for a numeric PIN.
 
 Each evaluation of `random-key` produces a different key, so always assign it to a variable
-if it is needed in more than one place. Keys generated this way are only as private as the
-package that contains them; keep long-lived secrets in environment variables instead
+if it is needed in more than one place. Generated keys are kept out of the log automatically
+(they appear as `***`), so `-v -v` builds are safe to retain.
+
+Keys generated this way are only as private as the package that contains them; keep
+long-lived secrets in environment variables instead
 (see [Keep Secrets in Environment Variables](#7-keep-secrets-in-environment-variables)).
 
 ### Working with External Tools
@@ -1543,6 +1546,27 @@ export PROJ_PORTAL_test=test-key-value
 `--target live` reads `PROJ_PORTAL_live`, `--target test` reads `PROJ_PORTAL_test`, and the
 config holds no secrets at all. On Linux and macOS environment variable names are
 case-sensitive, so define them using the exact case of the target name.
+
+**Keep secrets out of the build log:** mark the `<Set>` that holds a secret and every
+occurrence of its value is replaced with `***` in the log — including command lines printed
+by `<exec>` and by `--dry-run`:
+
+```xml
+<Target name="live" path="releases" type="zip">
+  <Set name="API_KEY" value="$PROJ_PORTAL_~TYPE~" secret="true" />
+</Target>
+
+<build>
+  <exec app="dotnet" args="nuget push --api-key ~API_KEY~" />
+  <!-- log shows: [dry-run] Would exec: dotnet nuget push --api-key *** -->
+</build>
+```
+
+Reference the secret through the variable rather than putting `$PROJ_PORTAL_~TYPE~` straight
+into the `args`: a value ReleaseBuilder never registers cannot be redacted. Under GitHub
+Actions the value is also passed to the runner with `::add-mask::` so other steps mask it.
+The packaged files themselves are not redacted — putting the secret in the artefact is the
+point of the variable.
 
 For secrets that belong to the release rather than the build machine — a machine key or a
 generated default password — use `<Set name="..." transform="random-key,32" />` so a new one

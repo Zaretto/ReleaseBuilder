@@ -48,6 +48,55 @@ namespace ReleaseBuilder
         public static int ErrorCount { get; private set; } = 0;
         public static void ResetErrorCount() => ErrorCount = 0;
 
+        /// <summary>
+        /// Values shorter than this are not registered as secrets: redacting them would hide
+        /// unrelated text (a short PIN, a port number) all over the log.
+        /// </summary>
+        public const int MinSecretLength = 8;
+
+        public const string Redaction = "***";
+
+        // Longest first, so a secret that contains another is redacted whole.
+        private static string[] _secrets = Array.Empty<string>();
+        private static readonly object _secretsLock = new object();
+
+        /// <summary>
+        /// Registers a value to be replaced with *** in everything this log writes — variable
+        /// values, command lines, dry-run messages and captured process output alike.
+        /// </summary>
+        public static void RegisterSecret(string? value)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length < MinSecretLength)
+                return;
+
+            lock (_secretsLock)
+            {
+                if (_secrets.Contains(value))
+                    return;
+                _secrets = _secrets.Append(value).OrderByDescending(s => s.Length).ToArray();
+            }
+
+            // Ask the CI runner to mask it too, so anything the job prints is covered.
+            if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
+                Console.WriteLine("::add-mask::" + value);
+        }
+
+        public static void ResetSecrets()
+        {
+            lock (_secretsLock)
+                _secrets = Array.Empty<string>();
+        }
+
+        public static string Redact(string message)
+        {
+            var secrets = _secrets;
+            if (secrets.Length == 0 || string.IsNullOrEmpty(message))
+                return message;
+            foreach (var secret in secrets)
+                message = message.Replace(secret, Redaction);
+            return message;
+        }
+
         public static void Format(LogMessageLevel level, string message, params object[] args)
         {
             LogMessage newMessage;
@@ -58,7 +107,7 @@ namespace ReleaseBuilder
             if (level >= LogMessageLevel.Error)
                 ErrorCount++;
             if (level >= Level)
-                Console.WriteLine(newMessage.ToString());
+                Console.WriteLine(Redact(newMessage.ToString()));
         }
 
         public static void ErrorFormat(string message, params object[] args)

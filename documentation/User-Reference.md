@@ -746,6 +746,7 @@ Defines target-specific variables that are only active when this target is selec
 | `name` | Yes | Variable name, referenced elsewhere as `~name~` |
 | `value` | No | Value; `~VARIABLE~` and `$ENVIRONMENT` references are expanded when the target becomes active |
 | `transform` | No | [Transform function](#transform-functions-reference) applied to `value` (which may be omitted) to produce the variable |
+| `secret` | No | `true` replaces the value with `***` everywhere ReleaseBuilder logs — see [Secret Redaction](#secret-redaction) |
 
 Variables available to a `<Set>` value are the built-ins, the GitVersion variables, `~TARGETPATH~`, and anything defined earlier in the file — including preceding `<Set>` elements of the same target.
 
@@ -1003,7 +1004,7 @@ If `name` is specified and `file` is not, tries `ReleaseConfig{name}.xml` first.
 
 The `value` attribute is expanded using the parent's variables before being passed to the child, so parent variable references like `~PARENT_VAR~` in a `value` string are resolved at the parent level. Multiple `<Set>` elements are allowed and all are injected.
 
-An optional `transform` attribute applies a [transform function](#transform-functions-reference) to the expanded value, for example `<Set name="API_SECRET" transform="random-key,32" />` to generate a secret in the parent and hand the same key to the child build.
+An optional `transform` attribute applies a [transform function](#transform-functions-reference) to the expanded value, for example `<Set name="API_SECRET" transform="random-key,32" />` to generate a secret in the parent and hand the same key to the child build. An optional `secret="true"` attribute registers the value for [redaction](#secret-redaction) in the log, in the child build as well as the parent.
 
 Variables injected this way are available throughout the child config — in paths, `active` conditions, `<create>` content, `archive-version`, and anywhere else variables are expanded.
 
@@ -1545,6 +1546,43 @@ export PROJ_PORTAL_test=test-key-value
 - If the composed name is not defined in the environment, ReleaseBuilder falls back to the literal part of the name (`$BASE~VER~` reads `BASE` and then expands `~VER~` separately). The error message names the composed variable when neither exists.
 - Environment variable names are case-sensitive on Linux and macOS but not on Windows. Where a variable such as `~TYPE~` supplies part of the name, define the environment variable using exactly the case of the target name.
 - Expansion is a single left-to-right pass: `$` and `~` characters inside a substituted value are not expanded again. A Windows short path such as `C:\PROGRA~1` is therefore safe as an environment variable value.
+
+### Secret Redaction
+
+A `<Set>` marked `secret="true"` registers its value with the logger, which replaces every occurrence of that value with `***` in everything it writes:
+
+```xml
+<Target name="live" path="releases" type="zip">
+  <Set name="API_KEY"     value="$PROJ_PORTAL_~TYPE~" secret="true" />
+  <Set name="MACHINE_KEY" transform="random-key,32" />
+</Target>
+
+<build>
+  <exec app="dotnet" args="nuget push --api-key ~API_KEY~" />
+</build>
+```
+
+```
+[DEBUG] API_KEY=***
+[DEBUG] MACHINE_KEY=***
+[ INFO] [dry-run] Would exec: dotnet nuget push --api-key ***
+```
+
+**What it covers:**
+
+Redaction happens on the way to the console, so it applies to every message: variable values at `-v -v`, `[dry-run] Would exec` lines, the command line included in an `<exec>` failure message, and captured process output that echoes its own arguments.
+
+**Rules and limits:**
+- Redaction matches the **value**, not the variable name. A secret used in three places is hidden in all three.
+- Values shorter than 8 characters are not registered — redacting them would blank out unrelated text throughout the log.
+- `random-key` output registers itself; `secret="true"` is not needed for it.
+- Registration is process-wide, so a secret marked in a parent config stays redacted inside nested `<ReleaseBuilder>` builds.
+- Reference secrets through a marked `<Set>` rather than using `$ENV_VAR` directly in an `<exec>` argument: a value the tool never registers cannot be redacted.
+- **Artefact contents are not redacted.** Writing a secret into a packaged file is the intended use of these variables; the redaction applies to log output only.
+
+**Continuous integration:**
+
+When `GITHUB_ACTIONS=true` is set in the environment, each registered secret is also emitted as a `::add-mask::` workflow command, so the runner masks the value in anything else the job prints — including output from steps that ReleaseBuilder does not control.
 
 ### Variable Expansion
 
@@ -2448,7 +2486,7 @@ random-key[,length[,charset]]
 **Notes:**
 - The default `alnum` set avoids characters that need escaping in JSON, XML, shell scripts, and `.env` files. `ascii` includes `$`, `&`, `<`, `"` and similar; check the destination format before using it.
 - Avoid `random-key` as the replacement in `regex-replace` — `$` characters in a generated key are interpreted as regex substitutions.
-- Generated values are logged at Debug level like any other variable, so do not run `-vv` builds whose logs are retained when the key is a real secret.
+- Generated keys register themselves for [secret redaction](#secret-redaction) without needing `secret="true"`, so they reach the log as `***`. Keys shorter than 8 characters are not registered.
 
 ---
 

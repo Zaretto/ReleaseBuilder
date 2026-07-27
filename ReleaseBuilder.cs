@@ -173,11 +173,11 @@ namespace ReleaseBuilder
                                {
                                    processAttributes(n, "value", (v) =>
                                    {
-                                       addvar(nn, _transform.ExpandVars(v)!);
+                                       addSetVar(n, nn!, _transform.ExpandVars(v)!);
                                    });
                                }
                                else
-                                   addvar(nn, _transform.Transform(transformAttribute, _transform.ExpandVars(GetAttribute(n, "value", ""))!));
+                                   addSetVar(n, nn!, _transform.Transform(transformAttribute, _transform.ExpandVars(GetAttribute(n, "value", ""))!));
                            });
 
                        });
@@ -411,9 +411,22 @@ namespace ReleaseBuilder
                 var transformAttribute = GetAttribute(n, "transform", "");
                 if (!string.IsNullOrEmpty(transformAttribute))
                     value = _transform.Transform(transformAttribute, value);
+                if (GetAttribute(n, "secret", false))
+                    RLog.RegisterSecret(value);
                 if (!string.IsNullOrEmpty(name))
                     yield return new KeyValuePair<string, string>(name, value);
             }
+        }
+
+        /// <summary>
+        /// Sets a variable from a &lt;Set&gt; element. A secret value is registered for log
+        /// redaction before it is stored, so it never reaches the log in the first place.
+        /// </summary>
+        private void addSetVar(XElement setNode, string name, string value)
+        {
+            if (GetAttribute(setNode, "secret", false))
+                RLog.RegisterSecret(value);
+            addvar(name, value);
         }
 
         private void processElements(XElement node, string name, Action<XElement> processNode)

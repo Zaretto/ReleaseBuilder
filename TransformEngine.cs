@@ -77,7 +77,10 @@ namespace ReleaseBuilder
                                     throw new Exception(String.Format("ERROR: Transform: {0} length must be a positive integer; [{1}]", transformation, parts[1]));
                             }
                             var charset = parts.Length >= 3 ? ExpandVars(parts[2])! : "";
-                            return RandomKey(length, charset);
+                            var key = RandomKey(length, charset);
+                            // Generated keys exist to be secrets; keep them out of the log.
+                            RLog.RegisterSecret(key);
+                            return key;
                         }
                     case "when":
                         {

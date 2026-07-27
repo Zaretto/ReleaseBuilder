@@ -20,6 +20,7 @@
                   <xs:attribute name="name" type="xs:string" />
                   <xs:attribute name="value" type="xs:string" />
                   <xs:attribute name="transform" type="xs:string" use="optional" />
+                  <xs:attribute name="secret" type="xs:boolean" use="optional" />
                 </xs:complexType>
               </xs:element>
             </xs:sequence>
@@ -128,6 +129,7 @@
                                   <xs:attribute name="name" type="xs:string" />
                                   <xs:attribute name="value" type="xs:string" />
                                   <xs:attribute name="transform" type="xs:string" use="optional" />
+                                  <xs:attribute name="secret" type="xs:boolean" use="optional" />
                                 </xs:complexType>
                               </xs:element>
                             </xs:sequence>
@@ -179,6 +181,7 @@
                   <xs:attribute name="name" type="xs:string" />
                   <xs:attribute name="value" type="xs:string" />
                   <xs:attribute name="transform" type="xs:string" use="optional" />
+                  <xs:attribute name="secret" type="xs:boolean" use="optional" />
                 </xs:complexType>
               </xs:element>
             </xs:sequence>

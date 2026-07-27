@@ -15,6 +15,7 @@ namespace ReleaseBuilder.Tests
         public ReleaseBuilderSetVarTests()
         {
             RLog.ResetErrorCount();
+            RLog.ResetSecrets();
             // Temp dirs live inside the test output directory so GitVersion can find
             // the repository root and return a valid version.
             _tempDir = Path.Combine(AppContext.BaseDirectory, "test_setvars_" + Guid.NewGuid().ToString("N"));
@@ -23,7 +24,30 @@ namespace ReleaseBuilder.Tests
 
         public void Dispose()
         {
+            RLog.ResetSecrets();
             try { Directory.Delete(_tempDir, recursive: true); } catch { }
+        }
+
+        /// <summary>
+        /// Runs the build with debug logging captured, so tests can assert on what reached the log.
+        /// </summary>
+        private static string CaptureBuildLog(ReleaseBuilder rb)
+        {
+            var original = Console.Out;
+            var captured = new StringWriter();
+            var level = RLog.Level;
+            try
+            {
+                Console.SetOut(captured);
+                RLog.Level = LogMessageLevel.Debug;
+                rb.Build();
+            }
+            finally
+            {
+                Console.SetOut(original);
+                RLog.Level = level;
+            }
+            return captured.ToString();
         }
 
         // ------------------------------------------------------------------
@@ -436,6 +460,95 @@ namespace ReleaseBuilder.Tests
             var key = File.ReadAllText(Path.Combine(childDir, "output.txt"));
             Assert.Equal(16, key.Length);
             Assert.All(key, c => Assert.Contains(c, "0123456789abcdef"));
+        }
+
+        [Fact]
+        public void Secret_Set_value_is_redacted_in_the_log()
+        {
+            var rb = BuildParent(Xml("""
+                  <Target name="live" type="folder" path=".">
+                    <Set name="API_KEY" value="s3cr3t-portal-value" secret="true" />
+                  </Target>
+                  <Artefacts>
+                    <build>
+                      <create file="out.txt">~API_KEY~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            var log = CaptureBuildLog(rb);
+
+            Assert.Equal(0, RLog.ErrorCount);
+            Assert.DoesNotContain("s3cr3t-portal-value", log);
+            Assert.Contains("API_KEY=***", log);
+            // The artefact itself still receives the real value.
+            Assert.Equal("s3cr3t-portal-value", File.ReadAllText(Path.Combine(_tempDir, "out.txt")));
+        }
+
+        [Fact]
+        public void Non_secret_Set_value_is_still_logged()
+        {
+            var rb = BuildParent(Xml("""
+                  <Target name="live" type="folder" path=".">
+                    <Set name="ENVIRONMENT" value="production-eu-west" />
+                  </Target>
+                """));
+
+            var log = CaptureBuildLog(rb);
+
+            Assert.Equal(0, RLog.ErrorCount);
+            Assert.Contains("ENVIRONMENT=production-eu-west", log);
+        }
+
+        [Fact]
+        public void Generated_key_is_redacted_without_the_secret_attribute()
+        {
+            // random-key output registers itself: it exists to be a secret.
+            var rb = BuildParent(Xml("""
+                  <Target name="live" type="folder" path=".">
+                    <Set name="MACHINE_KEY" transform="random-key,32" />
+                  </Target>
+                  <Artefacts>
+                    <build>
+                      <create file="key.txt">~MACHINE_KEY~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            var log = CaptureBuildLog(rb);
+
+            Assert.Equal(0, RLog.ErrorCount);
+            var key = File.ReadAllText(Path.Combine(_tempDir, "key.txt"));
+            Assert.Equal(32, key.Length);
+            Assert.DoesNotContain(key, log);
+            Assert.Contains("MACHINE_KEY=***", log);
+        }
+
+        [Fact]
+        public void Secret_injected_into_child_build_is_redacted_there_too()
+        {
+            var childDir = ChildDir("child");
+            File.WriteAllText(Path.Combine(childDir, "ReleaseConfig.xml"), Xml("""
+                  <Target name="live" type="folder" path="." />
+                  <Artefacts>
+                    <build>
+                      <create file="output.txt">~CHILD_SECRET~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            var rb = BuildParent(Xml($"""
+                  <Target name="live" type="folder" path="." />
+                  <ReleaseBuilder folder="{childDir.Replace("\\", "/")}" process="false">
+                    <Set name="CHILD_SECRET" value="child-secret-value" secret="true" />
+                  </ReleaseBuilder>
+                """));
+
+            var log = CaptureBuildLog(rb);
+
+            Assert.Equal(0, RLog.ErrorCount);
+            Assert.DoesNotContain("child-secret-value", log);
+            Assert.Equal("child-secret-value", File.ReadAllText(Path.Combine(childDir, "output.txt")));
         }
 
         [Fact]
