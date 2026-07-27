@@ -1287,6 +1287,43 @@ Automatically locate the most recent build:
 </Artefacts>
 ```
 
+### Generating Secrets at Build Time
+
+Some deployments need a key that is created fresh for each release — a machine key, an API
+token for a service that is configured at the same time, or a default admin password. The
+`random-key` transform generates one; assigning it with `<Set>` keeps the same key for the
+whole build:
+
+```xml
+<Target name="production" path="releases" type="zip">
+  <!-- 32-character alphanumeric key (the default length) -->
+  <Set name="API_SECRET" transform="random-key" />
+  <!-- 64 hex characters -->
+  <Set name="MACHINE_KEY" transform="random-key,64,hex" />
+</Target>
+
+<Artefacts>
+  <build>
+    <!-- Substitute the key into a template as it is copied -->
+    <copy from="appsettings.template.json" to="appsettings.json">
+      <transform-content transform="replace,__API_SECRET__,~API_SECRET~" />
+    </copy>
+
+    <!-- Or write it out for the deployment step to pick up -->
+    <create file="deploy-secrets.env">API_SECRET=~API_SECRET~</create>
+  </build>
+</Artefacts>
+```
+
+Available character sets are `alnum` (default), `alpha`, `numeric`, `hex`, `base64`,
+`base64url`, `ascii`, or any literal set of characters — for example
+`random-key,6,0123456789` for a numeric PIN.
+
+Each evaluation of `random-key` produces a different key, so always assign it to a variable
+if it is needed in more than one place. Keys generated this way are only as private as the
+package that contains them; keep long-lived secrets in environment variables instead
+(see [Keep Secrets in Environment Variables](#7-keep-secrets-in-environment-variables)).
+
 ### Working with External Tools
 
 #### Custom Build Scripts
@@ -1490,6 +1527,11 @@ Never hardcode passwords or API keys:
 ```xml
 <exec args="push --api-key $NUGET_API_KEY" />
 ```
+
+For secrets that belong to the release rather than the build machine — a machine key or a
+generated default password — use `<Set name="..." transform="random-key,32" />` so a new one
+is produced for each build instead of being committed to the config
+(see [Generating Secrets at Build Time](#generating-secrets-at-build-time)).
 
 ### 8. Use Descriptive Target Names
 

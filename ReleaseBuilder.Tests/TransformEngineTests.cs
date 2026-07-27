@@ -100,6 +100,114 @@ namespace ReleaseBuilder.Tests
             Assert.Equal("4.5.6", engine.Transform("getversion,~APPPATH~", "ignored"));
         }
 
+        // --- random-key ---
+
+        [Fact]
+        public void Transform_RandomKey_Default_Is_32_Alphanumeric()
+        {
+            var (_, engine) = Create();
+            var key = engine.Transform("random-key", "ignored");
+            Assert.Equal(32, key.Length);
+            Assert.All(key, c => Assert.True(char.IsAsciiLetterOrDigit(c), $"unexpected character '{c}'"));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Explicit_Length()
+        {
+            var (_, engine) = Create();
+            Assert.Equal(64, engine.Transform("random-key,64", "ignored").Length);
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Length_From_Variable()
+        {
+            var (_, engine) = Create(("KEYLEN", "16"));
+            Assert.Equal(16, engine.Transform("random-key,~KEYLEN~", "ignored").Length);
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Values_Differ()
+        {
+            var (_, engine) = Create();
+            Assert.NotEqual(engine.Transform("random-key", "ignored"), engine.Transform("random-key", "ignored"));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Hex_Charset()
+        {
+            var (_, engine) = Create();
+            var key = engine.Transform("random-key,40,hex", "ignored");
+            Assert.Equal(40, key.Length);
+            Assert.All(key, c => Assert.Contains(c, "0123456789abcdef"));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Base64Url_Charset()
+        {
+            var (_, engine) = Create();
+            var key = engine.Transform("random-key,32,base64url", "ignored");
+            Assert.All(key, c => Assert.True(char.IsAsciiLetterOrDigit(c) || c == '-' || c == '_', $"unexpected character '{c}'"));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Ascii_Charset_Is_Printable()
+        {
+            var (_, engine) = Create();
+            var key = engine.Transform("random-key,50,ascii", "ignored");
+            Assert.Equal(50, key.Length);
+            Assert.All(key, c => Assert.InRange(c, '!', '~'));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Literal_Charset()
+        {
+            var (_, engine) = Create();
+            var key = engine.Transform("random-key,20,ABC", "ignored");
+            Assert.Equal(20, key.Length);
+            Assert.All(key, c => Assert.Contains(c, "ABC"));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Escaped_Comma_In_Charset()
+        {
+            var (_, engine) = Create();
+            var key = engine.Transform("random-key,20,AB\\,", "ignored");
+            Assert.Equal(20, key.Length);
+            Assert.All(key, c => Assert.Contains(c, "AB,"));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Bad_Length_Throws()
+        {
+            var (_, engine) = Create();
+            Assert.Throws<Exception>(() => engine.Transform("random-key,abc", "ignored"));
+            Assert.Throws<Exception>(() => engine.Transform("random-key,0", "ignored"));
+            Assert.Throws<Exception>(() => engine.Transform("random-key,-4", "ignored"));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_TooManyArgs_Throws()
+        {
+            var (_, engine) = Create();
+            Assert.Throws<Exception>(() => engine.Transform("random-key,32,hex,extra", "ignored"));
+        }
+
+        [Fact]
+        public void Transform_RandomKey_Single_Character_Charset_Throws()
+        {
+            var (_, engine) = Create();
+            Assert.Throws<Exception>(() => engine.Transform("random-key,10,AAAA", "ignored"));
+        }
+
+        [Fact]
+        public void RandomKey_Uses_Whole_Charset()
+        {
+            // A long key from a 2-character set must contain both characters.
+            var key = TransformEngine.RandomKey(200, "XY");
+            Assert.Contains('X', key);
+            Assert.Contains('Y', key);
+        }
+
         [Fact]
         public void Transform_When_Equal_True()
         {

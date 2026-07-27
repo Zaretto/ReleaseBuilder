@@ -296,6 +296,105 @@ namespace ReleaseBuilder.Tests
         }
 
         [Fact]
+        public void Target_Set_transform_generates_a_random_key()
+        {
+            // <Set transform="random-key,24"/> puts a generated secret in a variable that
+            // is then usable throughout the build.
+            var rb = BuildParent(Xml("""
+                  <Target name="live" type="folder" path=".">
+                    <Set name="API_SECRET" transform="random-key,24" />
+                  </Target>
+                  <Artefacts>
+                    <build>
+                      <create file="secret.txt">~API_SECRET~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            rb.Build();
+
+            Assert.Equal(0, RLog.ErrorCount);
+            var key = File.ReadAllText(Path.Combine(_tempDir, "secret.txt"));
+            Assert.Equal(24, key.Length);
+            Assert.All(key, c => Assert.True(char.IsAsciiLetterOrDigit(c), $"unexpected character '{c}'"));
+        }
+
+        [Fact]
+        public void Same_generated_key_is_used_everywhere_in_the_build()
+        {
+            // The key is generated once when the variable is set, not per reference.
+            var rb = BuildParent(Xml("""
+                  <Target name="live" type="folder" path=".">
+                    <Set name="API_SECRET" transform="random-key" />
+                  </Target>
+                  <Artefacts>
+                    <build>
+                      <create file="first.txt">~API_SECRET~</create>
+                      <create file="second.txt">~API_SECRET~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            rb.Build();
+
+            Assert.Equal(0, RLog.ErrorCount);
+            var first = File.ReadAllText(Path.Combine(_tempDir, "first.txt"));
+            Assert.Equal(32, first.Length);
+            Assert.Equal(first, File.ReadAllText(Path.Combine(_tempDir, "second.txt")));
+        }
+
+        [Fact]
+        public void Target_Set_transform_applies_to_expanded_value()
+        {
+            // With a transform present the value attribute is expanded first, so the
+            // transform operates on the resolved variable.
+            var rb = BuildParent(Xml("""
+                  <Target name="live" type="folder" path=".">
+                    <Set name="BASE" value="1.2.3" />
+                    <Set name="UNDERSCORED" value="~BASE~" transform="replace,.,_" />
+                  </Target>
+                  <Artefacts>
+                    <build>
+                      <create file="value.txt">~UNDERSCORED~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            rb.Build();
+
+            Assert.Equal(0, RLog.ErrorCount);
+            Assert.Equal("1_2_3", File.ReadAllText(Path.Combine(_tempDir, "value.txt")));
+        }
+
+        [Fact]
+        public void Generated_key_injected_into_child_build()
+        {
+            var childDir = ChildDir("child");
+            File.WriteAllText(Path.Combine(childDir, "ReleaseConfig.xml"), Xml("""
+                  <Target name="live" type="folder" path="." />
+                  <Artefacts>
+                    <build>
+                      <create file="output.txt">~CHILD_SECRET~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            var rb = BuildParent(Xml($"""
+                  <Target name="live" type="folder" path="." />
+                  <ReleaseBuilder folder="{childDir.Replace("\\", "/")}" process="false">
+                    <Set name="CHILD_SECRET" transform="random-key,16,hex" />
+                  </ReleaseBuilder>
+                """));
+
+            rb.Build();
+
+            Assert.Equal(0, RLog.ErrorCount);
+            var key = File.ReadAllText(Path.Combine(childDir, "output.txt"));
+            Assert.Equal(16, key.Length);
+            Assert.All(key, c => Assert.Contains(c, "0123456789abcdef"));
+        }
+
+        [Fact]
         public void ReleaseBuilder_without_Set_children_still_works()
         {
             // Backward-compatibility: existing <ReleaseBuilder> elements with no <Set>

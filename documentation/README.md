@@ -36,7 +36,7 @@ A comprehensive reference manual covering every command-line option, configurati
 - Configuration file structure and elements
 - Variable system (built-in, user-defined, environment)
 - Build actions reference (clean, copy, exec, create, xml-edit)
-- Transform functions (set, replace, regex-replace, getversion, when)
+- Transform functions (set, replace, regex-replace, getversion, random-key, when)
 - Path resolution rules
 - Exit codes and error handling
 - File format specifications
@@ -88,6 +88,7 @@ Detailed documentation of the ReleaseConfig.xml format with extensive examples.
 | Copy files | [User Reference: copy action](User-Reference.md#action-copy) |
 | Transform file contents | [Format Reference: copy with transform](ReleaseConfig-Format.md#copy) |
 | Edit XML files | [User Reference: xml-edit action](User-Reference.md#action-xml-edit) |
+| Generate a secret key | [User Guide: Generating Secrets at Build Time](User-Guide.md#generating-secrets-at-build-time) |
 | Troubleshoot errors | [User Guide: Troubleshooting](User-Guide.md#troubleshooting) |
 
 ### By Role

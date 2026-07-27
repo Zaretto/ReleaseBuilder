@@ -16,6 +16,7 @@ A cross-platform .NET 8.0 build automation tool that uses XML configuration file
   - Archive creation (ZIP)
 - **Modular Builds**: Selective module building with `--module` flag
 - **Variable Substitution**: Dynamic variable expansion in configuration files
+- **Build-Time Secrets**: `random-key` transform generates cryptographically random keys of any length
 - **Verbose Logging**: Multiple verbosity levels for debugging
 
 ## Quick Start
@@ -216,7 +217,7 @@ dotnet test
 ```
 
 The `ReleaseBuilder.Tests` project tests the following components:
-- **TransformEngine** — transform expressions (set, replace, regex-replace, getversion, when), comparison operators, variable expansion
+- **TransformEngine** — transform expressions (set, replace, regex-replace, getversion, random-key, when), comparison operators, variable expansion
 - **VariableStore** — variable storage, retrieval, case-insensitive lookup
 - **PackedIntegerVersion** — version packing/unpacking, CalVer support, scale factors
 - **OptionsParser** — command-line argument parsing

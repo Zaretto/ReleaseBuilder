@@ -225,12 +225,22 @@ Defines a deployment target with output configuration.
 **Child Elements:**
 - `<Set>` - Define target-specific variables (only active when this target is selected)
 
+**`<Set>` Attributes:**
+
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `name` | Yes | Variable name (referenced as `~name~`) |
+| `value` | No | Literal value |
+| `transform` | No | Transform applied to `value` to produce the variable, e.g. `random-key,32` |
+
 **Example:**
 ```xml
 <!-- Create a ZIP file -->
 <Target name="live" path="releases" type="zip" archive-version="~SemVer~">
   <Set name="ENV" value="production" />
   <Set name="API_URL" value="https://api.prod.example.com" />
+  <!-- Generated once per build and usable anywhere as ~API_SECRET~ -->
+  <Set name="API_SECRET" transform="random-key,32" />
 </Target>
 
 <!-- Copy to a folder -->
@@ -366,6 +376,7 @@ Recursively invokes ReleaseBuilder on a nested configuration file, enabling modu
 
 **Child Elements:**
 - `<Set name="..." value="...">` — Inject a variable into the child config's variable store. Values are expanded using the parent's variables before injection, so `~PARENT_VAR~` references in a `value` attribute are resolved at the parent level. Multiple `<Set>` elements are allowed.
+- `<Set name="..." transform="...">` — Inject a variable whose value is produced by a transform, e.g. `transform="random-key,32"` to generate a secret in the parent and share it with the child. The transform is applied to the (optional) expanded `value`.
 
 **How Configuration Chaining Works:**
 
@@ -1226,6 +1237,52 @@ Extracts digits and dots pattern (e.g., `1.2.3.4`) from the last path component.
 <Target name="live" archive-version="getversion,~APPPATH~" />
 <!-- If APPPATH = "C:\builds\MyApp_1.2.3.4" then archive-version becomes "1.2.3.4" -->
 ```
+
+---
+
+### random-key
+
+Generates a cryptographically random key, for secrets that are created at build time.
+
+**Syntax:** `random-key[,length[,charset]]`
+
+- `length` — number of characters (default `32`)
+- `charset` — named set or the literal characters to use (default `alnum`)
+
+| Charset | Characters |
+|---------|------------|
+| `alnum` (default) | `A-Z a-z 0-9` |
+| `alpha` | `A-Z a-z` |
+| `numeric` | `0-9` |
+| `hex` | `0-9 a-f` |
+| `base64` | `A-Z a-z 0-9 + /` |
+| `base64url` | `A-Z a-z 0-9 - _` |
+| `ascii` | all printable ASCII except space |
+| anything else | the literal characters given (duplicates ignored) |
+
+A new key is produced every time the transform is evaluated, so assign it to a variable with `<Set>` when the same key must appear in more than one place:
+
+```xml
+<Target name="live" path="releases" type="zip">
+  <Set name="API_SECRET" transform="random-key,32" />
+  <Set name="DB_KEY"     transform="random-key,64,hex" />
+</Target>
+
+<Artefacts>
+  <build>
+    <copy from="appsettings.template.json" to="appsettings.json">
+      <transform-content transform="replace,__API_SECRET__,~API_SECRET~" />
+    </copy>
+    <create file="secrets.env">API_SECRET=~API_SECRET~</create>
+  </build>
+</Artefacts>
+```
+
+**Notes:**
+- Uses the platform cryptographic random number generator; characters are chosen without bias.
+- `ascii` includes characters such as `$`, `&`, `<` and `"` that may need escaping in the file the key is written to; `alnum` (the default) avoids that.
+- The generated value is written to the debug log like any other variable, so avoid `--verbose` debug output on builds whose logs are kept.
+- A literal charset that includes a comma must escape it as `\,`, since commas separate transform arguments.
 
 ---
 

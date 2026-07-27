@@ -168,10 +168,16 @@ namespace ReleaseBuilder
                        {
                            processAttributes(n, "name", (nn) =>
                            {
-                               processAttributes(n, "value", (v) =>
+                               var transformAttribute = GetAttribute(n, "transform", "");
+                               if (string.IsNullOrEmpty(transformAttribute))
                                {
-                                   addvar(nn, v);
-                               });
+                                   processAttributes(n, "value", (v) =>
+                                   {
+                                       addvar(nn, v);
+                                   });
+                               }
+                               else
+                                   addvar(nn, _transform.Transform(transformAttribute, _transform.ExpandVars(GetAttribute(n, "value", ""))!));
                            });
 
                        });
@@ -401,7 +407,10 @@ namespace ReleaseBuilder
             foreach (var n in node.Elements("Set"))
             {
                 var name = GetAttribute(n, "name", "");
-                var value = _transform.ExpandVars(GetAttribute(n, "value", ""));
+                var value = _transform.ExpandVars(GetAttribute(n, "value", ""))!;
+                var transformAttribute = GetAttribute(n, "transform", "");
+                if (!string.IsNullOrEmpty(transformAttribute))
+                    value = _transform.Transform(transformAttribute, value);
                 if (!string.IsNullOrEmpty(name))
                     yield return new KeyValuePair<string, string>(name, value);
             }

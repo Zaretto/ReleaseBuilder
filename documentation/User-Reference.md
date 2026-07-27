@@ -736,7 +736,16 @@ Defines target-specific variables that are only active when this target is selec
 **Syntax:**
 ```xml
 <Set name="VARIABLE_NAME" value="variable_value" />
+<Set name="VARIABLE_NAME" transform="transform_expression" />
 ```
+
+**Attributes:**
+
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `name` | Yes | Variable name, referenced elsewhere as `~name~` |
+| `value` | No | Literal value |
+| `transform` | No | [Transform function](#transform-functions-reference) applied to `value` (which may be omitted) to produce the variable |
 
 **Complete Example:**
 ```xml
@@ -755,6 +764,8 @@ Defines target-specific variables that are only active when this target is selec
   <Set name="ENVIRONMENT" value="Production" />
   <Set name="API_URL" value="https://api.example.com" />
   <Set name="LOG_LEVEL" value="Warning" />
+  <!-- Build-time secret; generated once and used wherever ~API_SECRET~ appears -->
+  <Set name="API_SECRET" transform="random-key,32" />
 </Target>
 ```
 
@@ -989,6 +1000,8 @@ If `name` is specified and `file` is not, tries `ReleaseConfig{name}.xml` first.
 **Purpose:** Inject a variable into the child config's variable store
 
 The `value` attribute is expanded using the parent's variables before being passed to the child, so parent variable references like `~PARENT_VAR~` in a `value` string are resolved at the parent level. Multiple `<Set>` elements are allowed and all are injected.
+
+An optional `transform` attribute applies a [transform function](#transform-functions-reference) to the expanded value, for example `<Set name="API_SECRET" transform="random-key,32" />` to generate a secret in the parent and hand the same key to the child build.
 
 Variables injected this way are available throughout the child config — in paths, `active` conditions, `<create>` content, `archive-version`, and anywhere else variables are expanded.
 
@@ -1464,6 +1477,18 @@ ReleaseBuilder -vv
   <!-- Creates ~MY_VAR~ (only when this target is active) -->
 </Target>
 ```
+
+#### Generated Values (transform on Set)
+
+```xml
+<Target name="production">
+  <Set name="API_SECRET" transform="random-key,32" />
+  <!-- Creates ~API_SECRET~ holding a random 32-character key,
+       generated once and unchanged for the rest of the build -->
+</Target>
+```
+
+See [Function: random-key](#function-random-key).
 
 ### Environment Variables
 
@@ -2332,6 +2357,67 @@ Takes last path component (after last `/` or `\`) and extracts version pattern.
 - `C:\Builds\MyApp_1.2.3` → `1.2.3`
 - `/home/app/Release_2.0.1.4` → `2.0.1.4`
 - `Package_1.0` → `1.0`
+
+---
+
+### Function: random-key
+
+Generates a cryptographically random key for use as a build-time secret.
+
+**Syntax:**
+```
+random-key[,length[,charset]]
+```
+
+**Parameters:**
+- `length` - Number of characters (default `32`); may be a variable reference
+- `charset` - Named character set, or the literal characters to choose from (default `alnum`)
+
+**Character Sets:**
+
+| Name | Characters |
+|------|------------|
+| `alnum` (default) | `A-Z`, `a-z`, `0-9` |
+| `alpha` | `A-Z`, `a-z` |
+| `numeric` | `0-9` |
+| `hex` | `0-9`, `a-f` |
+| `base64` | `A-Z`, `a-z`, `0-9`, `+`, `/` |
+| `base64url` | `A-Z`, `a-z`, `0-9`, `-`, `_` |
+| `ascii` | All printable ASCII except space (`!` to `~`) |
+| Any other value | Used literally as the set of characters (duplicates ignored; escape a comma as `\,`) |
+
+**Examples:**
+```xml
+<!-- 32-character alphanumeric key, held in a variable for the whole build -->
+<Target name="production" path="releases" type="zip">
+  <Set name="API_SECRET" transform="random-key" />
+  <Set name="DB_KEY"     transform="random-key,64,hex" />
+  <Set name="PIN"        transform="random-key,6,numeric" />
+</Target>
+
+<!-- Substitute the generated key into a config file as it is copied -->
+<copy from="appsettings.template.json" to="appsettings.json">
+  <transform-content transform="replace,__API_SECRET__,~API_SECRET~" />
+</copy>
+
+<!-- Write a secrets file for deployment -->
+<create file="secrets.env">API_SECRET=~API_SECRET~</create>
+
+<!-- Direct use in an XML edit: a fresh key each time it is evaluated -->
+<xml-edit file="web.config">
+  <node path="//appSettings/add[@key='MachineKey']/@value" action="random-key,48" />
+</xml-edit>
+```
+
+**Behaviour:**
+- Each evaluation returns a new key. To use one key in several places, assign it once with `<Set name="..." transform="random-key,..."/>` and reference the variable.
+- Characters are drawn from the platform cryptographic random number generator (`RandomNumberGenerator`) with equal probability.
+- Errors (raised as build errors): length that is not a positive integer, more than two arguments, or a character set with fewer than two distinct characters.
+
+**Notes:**
+- The default `alnum` set avoids characters that need escaping in JSON, XML, shell scripts, and `.env` files. `ascii` includes `$`, `&`, `<`, `"` and similar; check the destination format before using it.
+- Avoid `random-key` as the replacement in `regex-replace` — `$` characters in a generated key are interpreted as regex substitutions.
+- Generated values are logged at Debug level like any other variable, so do not run `-vv` builds whose logs are retained when the key is a real secret.
 
 ---
 
