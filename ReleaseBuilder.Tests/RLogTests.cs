@@ -182,24 +182,40 @@ namespace ReleaseBuilder.Tests
         [Fact]
         public void Logged_output_is_redacted()
         {
-            var original = Console.Out;
-            var captured = new StringWriter();
-            var level = RLog.Level;
-            try
+            var text = CaptureConsole(() =>
             {
-                Console.SetOut(captured);
                 RLog.Level = LogMessageLevel.Debug;
                 RLog.RegisterSecret("logged-secret-value");
                 RLog.DebugFormat("{0}={1}", "API_KEY", "logged-secret-value");
+            });
+            Assert.DoesNotContain("logged-secret-value", text);
+            Assert.Contains("API_KEY=***", text);
+        }
+
+        /// <summary>
+        /// Captures console output with GITHUB_ACTIONS cleared: the ::add-mask:: workflow
+        /// command has to carry the raw value, so the test would otherwise find the secret
+        /// in its own capture when run on a CI runner.
+        /// </summary>
+        internal static string CaptureConsole(Action action)
+        {
+            var original = Console.Out;
+            var wasSet = Environment.GetEnvironmentVariable("GITHUB_ACTIONS");
+            var level = RLog.Level;
+            var captured = new StringWriter();
+            try
+            {
+                Environment.SetEnvironmentVariable("GITHUB_ACTIONS", null);
+                Console.SetOut(captured);
+                action();
             }
             finally
             {
                 Console.SetOut(original);
+                Environment.SetEnvironmentVariable("GITHUB_ACTIONS", wasSet);
                 RLog.Level = level;
             }
-            var text = captured.ToString();
-            Assert.DoesNotContain("logged-secret-value", text);
-            Assert.Contains("API_KEY=***", text);
+            return captured.ToString();
         }
     }
 }

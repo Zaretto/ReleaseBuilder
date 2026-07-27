@@ -30,24 +30,15 @@ namespace ReleaseBuilder.Tests
 
         /// <summary>
         /// Runs the build with debug logging captured, so tests can assert on what reached the log.
+        /// GITHUB_ACTIONS is cleared for the duration; see RLogTests.CaptureConsole.
         /// </summary>
         private static string CaptureBuildLog(ReleaseBuilder rb)
         {
-            var original = Console.Out;
-            var captured = new StringWriter();
-            var level = RLog.Level;
-            try
+            return RLogTests.CaptureConsole(() =>
             {
-                Console.SetOut(captured);
                 RLog.Level = LogMessageLevel.Debug;
                 rb.Build();
-            }
-            finally
-            {
-                Console.SetOut(original);
-                RLog.Level = level;
-            }
-            return captured.ToString();
+            });
         }
 
         // ------------------------------------------------------------------
