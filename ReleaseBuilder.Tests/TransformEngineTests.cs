@@ -376,6 +376,152 @@ namespace ReleaseBuilder.Tests
             Assert.StartsWith("test-", result);
         }
 
+        // --- ExpandVars: environment variable names built from variables ---
+
+        private static void SetEnv(string name, string? value) =>
+            Environment.SetEnvironmentVariable(name, value);
+
+        [Fact]
+        public void ExpandVars_EnvName_Composed_From_Variable()
+        {
+            SetEnv("RB_TEST_PORTAL_LIVE", "live-secret");
+            var (_, engine) = Create(("TYPE", "LIVE"));
+            Assert.Equal("live-secret", engine.ExpandVars("$RB_TEST_PORTAL_~TYPE~"));
+        }
+
+        [Fact]
+        public void ExpandVars_EnvName_Composed_Selects_Per_Target_Value()
+        {
+            SetEnv("RB_TEST_KEY_LIVE", "key-for-live");
+            SetEnv("RB_TEST_KEY_TEST", "key-for-test");
+            var (live, _) = Create(("TYPE", "LIVE"));
+            var (test, _) = Create(("TYPE", "TEST"));
+            Assert.Equal("key-for-live", new TransformEngine(live).ExpandVars("$RB_TEST_KEY_~TYPE~"));
+            Assert.Equal("key-for-test", new TransformEngine(test).ExpandVars("$RB_TEST_KEY_~TYPE~"));
+        }
+
+        [Fact]
+        public void ExpandVars_EnvName_Composed_With_Trailing_Text()
+        {
+            SetEnv("RB_TEST_LIVE_KEY", "composed-value");
+            var (_, engine) = Create(("TYPE", "LIVE"));
+            Assert.Equal("composed-value", engine.ExpandVars("$RB_TEST_~TYPE~_KEY"));
+        }
+
+        [Fact]
+        public void ExpandVars_EnvName_Composed_Then_More_Text()
+        {
+            SetEnv("RB_TEST_PATH_LIVE", "/deploy/live");
+            var (_, engine) = Create(("TYPE", "LIVE"));
+            Assert.Equal("/deploy/live/bin", engine.ExpandVars("$RB_TEST_PATH_~TYPE~/bin"));
+        }
+
+        [Fact]
+        public void ExpandVars_Adjacent_Env_And_Variable_Falls_Back_To_Old_Behaviour()
+        {
+            // $RB_TEST_BASE~SUFFIX~ : no RB_TEST_BASEv1 exists, so the plain env var is used
+            // and ~SUFFIX~ is expanded separately, as it was before composed names.
+            SetEnv("RB_TEST_BASE", "base");
+            SetEnv("RB_TEST_BASEv1", null);
+            var (_, engine) = Create(("SUFFIX", "v1"));
+            Assert.Equal("basev1", engine.ExpandVars("$RB_TEST_BASE~SUFFIX~"));
+        }
+
+        [Fact]
+        public void ExpandVars_Composed_Name_Wins_Over_Fallback()
+        {
+            SetEnv("RB_TEST_PREFER", "plain");
+            SetEnv("RB_TEST_PREFERv1", "composed");
+            var (_, engine) = Create(("SUFFIX", "v1"));
+            Assert.Equal("composed", engine.ExpandVars("$RB_TEST_PREFER~SUFFIX~"));
+        }
+
+        [Fact]
+        public void ExpandVars_Unknown_Composed_EnvVar_Throws_With_Composed_Name()
+        {
+            SetEnv("RB_TEST_MISSING_LIVE", null);
+            SetEnv("RB_TEST_MISSING_", null);
+            var (_, engine) = Create(("TYPE", "LIVE"));
+            var ex = Assert.Throws<Exception>(() => engine.ExpandVars("$RB_TEST_MISSING_~TYPE~"));
+            Assert.Contains("RB_TEST_MISSING_LIVE", ex.Message);
+        }
+
+        [Fact]
+        public void ExpandVars_Unknown_Variable_In_EnvName_Throws()
+        {
+            var (_, engine) = Create();
+            Assert.Throws<Exception>(() => engine.ExpandVars("$RB_TEST_ANY_~NOPE~"));
+        }
+
+        [Fact]
+        public void ExpandVars_Dollar_Before_Variable_Stays_Literal()
+        {
+            // $~VAR~ keeps its previous meaning: a literal $ followed by a variable.
+            var (_, engine) = Create(("AMOUNT", "100"));
+            Assert.Equal("$100", engine.ExpandVars("$~AMOUNT~"));
+        }
+
+        [Fact]
+        public void ExpandVars_Unpaired_Tilde_Is_Literal()
+        {
+            SetEnv("RB_TEST_PLAIN", "value");
+            var (_, engine) = Create();
+            Assert.Equal("value~rest", engine.ExpandVars("$RB_TEST_PLAIN~rest"));
+            Assert.Equal("a~b", engine.ExpandVars("a~b"));
+        }
+
+        [Fact]
+        public void ExpandVars_Variable_Reference_Does_Not_Span_Lines()
+        {
+            // package.json content: npm tilde ranges on separate lines are literal text,
+            // not the start and end of a variable reference.
+            var (_, engine) = Create(("SemVer", "1.2.3"));
+            var json = "{\n  \"@abp/ng.core\": \"~8.0.4\",\n  \"@angular/core\": \"~17.0.0\"\n}";
+            Assert.Equal(json, engine.ExpandVars(json));
+        }
+
+        [Fact]
+        public void ExpandVars_Variable_Still_Expands_Within_A_Line_Of_Multiline_Text()
+        {
+            var (_, engine) = Create(("SemVer", "1.2.3"));
+            var text = "{\n  \"version\": \"~SemVer~\",\n  \"dep\": \"~8.0.4\"\n}";
+            Assert.Equal("{\n  \"version\": \"1.2.3\",\n  \"dep\": \"~8.0.4\"\n}", engine.ExpandVars(text));
+        }
+
+        [Fact]
+        public void ExpandVars_EnvName_Composition_Does_Not_Span_Lines()
+        {
+            SetEnv("RB_TEST_LINE", "line-value");
+            var (_, engine) = Create(("TYPE", "LIVE"));
+            Assert.Equal("line-value\n~8.0.4", engine.ExpandVars("$RB_TEST_LINE\n~8.0.4"));
+        }
+
+        [Fact]
+        public void ExpandVars_Substituted_Values_Are_Not_Rescanned()
+        {
+            // An env value containing ~text~ or $text must be used verbatim.
+            SetEnv("RB_TEST_SHORTPATH", @"C:\PROGRA~1\APP~2");
+            SetEnv("RB_TEST_DOLLAR", "$NOT_A_VARIABLE");
+            var (_, engine) = Create(("VER", "1.0"));
+            Assert.Equal(@"C:\PROGRA~1\APP~2", engine.ExpandVars("$RB_TEST_SHORTPATH"));
+            Assert.Equal("$NOT_A_VARIABLE", engine.ExpandVars("$RB_TEST_DOLLAR"));
+        }
+
+        [Fact]
+        public void ExpandVars_Variable_Value_Containing_Dollar_Is_Not_Expanded()
+        {
+            var (_, engine) = Create(("PRICE", "$NOT_AN_ENV_VAR"));
+            Assert.Equal("$NOT_AN_ENV_VAR", engine.ExpandVars("~PRICE~"));
+        }
+
+        [Fact]
+        public void ExpandVars_Lone_Dollar_Is_Literal()
+        {
+            var (_, engine) = Create();
+            Assert.Equal("cost $ each", engine.ExpandVars("cost $ each"));
+            Assert.Equal("100$", engine.ExpandVars("100$"));
+        }
+
         [Fact]
         public void ExpandVars_XAttribute_Null_Returns_Empty()
         {

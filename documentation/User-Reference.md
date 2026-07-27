@@ -744,8 +744,10 @@ Defines target-specific variables that are only active when this target is selec
 | Attribute | Required | Description |
 |-----------|----------|-------------|
 | `name` | Yes | Variable name, referenced elsewhere as `~name~` |
-| `value` | No | Literal value |
+| `value` | No | Value; `~VARIABLE~` and `$ENVIRONMENT` references are expanded when the target becomes active |
 | `transform` | No | [Transform function](#transform-functions-reference) applied to `value` (which may be omitted) to produce the variable |
+
+Variables available to a `<Set>` value are the built-ins, the GitVersion variables, `~TARGETPATH~`, and anything defined earlier in the file — including preceding `<Set>` elements of the same target.
 
 **Complete Example:**
 ```xml
@@ -1299,7 +1301,10 @@ ReleaseBuilder supports three types of variables:
 **Dollar syntax** (for environment variables):
 ```
 $VARIABLE_NAME
+$VARIABLE_~VAR~_NAME
 ```
+
+The name of an environment variable may itself contain `~VARIABLE~` references, so the variable actually read can depend on the active target — see [Environment Variables](#environment-variables).
 
 ### Built-in Variables
 
@@ -1519,6 +1524,28 @@ $env:DEPLOY_PATH = "C:\inetpub\wwwroot\app"
 ReleaseBuilder --target prod
 ```
 
+#### Target-Specific Environment Variables
+
+An environment variable name may contain `~VARIABLE~` references, which are resolved before the environment is read. With `~TYPE~` holding the active target name this selects a different environment variable per target, so each target can have its own secret:
+
+```xml
+<create file="portal.env">API_KEY=$PROJ_PORTAL_~TYPE~</create>
+<!-- Target "live"  reads PROJ_PORTAL_live  -->
+<!-- Target "test"  reads PROJ_PORTAL_test  -->
+```
+
+```bash
+export PROJ_PORTAL_live=live-key-value
+export PROJ_PORTAL_test=test-key-value
+```
+
+**Rules:**
+- The name must begin with a literal character: `$~TYPE~` is a literal `$` followed by the expanded variable, unchanged from previous behaviour.
+- A `~VARIABLE~` reference may appear anywhere after the first character: `$RB_~TYPE~_KEY` is equally valid.
+- If the composed name is not defined in the environment, ReleaseBuilder falls back to the literal part of the name (`$BASE~VER~` reads `BASE` and then expands `~VER~` separately). The error message names the composed variable when neither exists.
+- Environment variable names are case-sensitive on Linux and macOS but not on Windows. Where a variable such as `~TYPE~` supplies part of the name, define the environment variable using exactly the case of the target name.
+- Expansion is a single left-to-right pass: `$` and `~` characters inside a substituted value are not expanded again. A Windows short path such as `C:\PROGRA~1` is therefore safe as an environment variable value.
+
 ### Variable Expansion
 
 Variables are expanded (recursively) before use:
@@ -1533,10 +1560,14 @@ Variables are expanded (recursively) before use:
 
 **Nested Expansion:**
 ```xml
-<Set name="BASE" value="C:/Projects" />
-<Set name="PROJECT" value="~BASE~/MyApp" />
-<!-- PROJECT = "C:/Projects/MyApp" -->
+<Target name="live" path="releases" type="zip">
+  <Set name="BASE"    value="C:/Projects" />
+  <Set name="PROJECT" value="~BASE~/MyApp" />
+  <!-- PROJECT = "C:/Projects/MyApp" -->
+</Target>
 ```
+
+Expansion is a single left-to-right pass over each string: a value substituted into the result is not scanned again, so `~` and `$` characters within a variable's value are literal text.
 
 ### Variable Scope
 

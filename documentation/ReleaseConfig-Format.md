@@ -62,6 +62,16 @@ Environment variables can be referenced using `$VARIABLE_NAME` syntax:
 <Target name="live" path="$PATH_52"/>
 ```
 
+The name of an environment variable may itself contain `~VARIABLE~` references, so the variable read can depend on the active target — useful for keeping a separate secret per target outside the config:
+```xml
+<create file="portal.env">API_KEY=$PROJ_PORTAL_~TYPE~</create>
+<!-- --target live reads PROJ_PORTAL_live; --target test reads PROJ_PORTAL_test -->
+```
+
+The name must start with a literal character (`$~TYPE~` remains a literal `$` followed by the variable), and if the composed name is not defined the literal part of the name is used instead, with the `~VARIABLE~` expanded separately. Environment variable names are case-sensitive on Linux and macOS.
+
+Substitution is a single left-to-right pass: `~` and `$` characters inside a substituted value are literal text and are not expanded again.
+
 ## Built-in Variables
 
 ReleaseBuilder automatically provides these variables:
@@ -230,7 +240,7 @@ Defines a deployment target with output configuration.
 | Attribute | Required | Description |
 |-----------|----------|-------------|
 | `name` | Yes | Variable name (referenced as `~name~`) |
-| `value` | No | Literal value |
+| `value` | No | Value; variable and environment references are expanded when the target becomes active |
 | `transform` | No | Transform applied to `value` to produce the variable, e.g. `random-key,32` |
 
 **Example:**
@@ -1547,7 +1557,7 @@ ReleaseBuilder --toolsdir /custom/tools --toolsdir /another/path
 
 2. **Modular Builds**: Break complex builds into modules using `<ReleaseBuilder>` elements
 
-3. **Environment Variables**: Use `$VAR` syntax for sensitive data (API keys, passwords) and deployment paths
+3. **Environment Variables**: Use `$VAR` syntax for sensitive data (API keys, passwords) and deployment paths. The name may include variable references — `$API_KEY_~TYPE~` reads a different environment variable for each target
 
 4. **Version Management**: Let GitVersion handle versioning automatically via `~SemVer~`
 

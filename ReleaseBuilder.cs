@@ -173,7 +173,7 @@ namespace ReleaseBuilder
                                {
                                    processAttributes(n, "value", (v) =>
                                    {
-                                       addvar(nn, v);
+                                       addvar(nn, _transform.ExpandVars(v)!);
                                    });
                                }
                                else

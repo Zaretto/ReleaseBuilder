@@ -344,6 +344,50 @@ namespace ReleaseBuilder.Tests
         }
 
         [Fact]
+        public void Target_Set_value_expands_variables()
+        {
+            // Target <Set> values are expanded like every other attribute, so built-in and
+            // earlier user variables can be referenced.
+            var rb = BuildParent(Xml("""
+                  <Target name="live" type="folder" path=".">
+                    <Set name="BASE"   value="Release" />
+                    <Set name="OUTPUT" value="~BASE~/~TYPE~" />
+                  </Target>
+                  <Artefacts>
+                    <build>
+                      <create file="output.txt">~OUTPUT~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            rb.Build();
+
+            Assert.Equal(0, RLog.ErrorCount);
+            Assert.Equal("Release/live", File.ReadAllText(Path.Combine(_tempDir, "output.txt")));
+        }
+
+        [Fact]
+        public void Target_Set_value_keeps_unpaired_tilde_literal()
+        {
+            // A lone ~ (a home-relative path, say) is not a variable reference.
+            var rb = BuildParent(Xml("""
+                  <Target name="live" type="folder" path=".">
+                    <Set name="DEST" value="~/deploy/app" />
+                  </Target>
+                  <Artefacts>
+                    <build>
+                      <create file="dest.txt">~DEST~</create>
+                    </build>
+                  </Artefacts>
+                """));
+
+            rb.Build();
+
+            Assert.Equal(0, RLog.ErrorCount);
+            Assert.Equal("~/deploy/app", File.ReadAllText(Path.Combine(_tempDir, "dest.txt")));
+        }
+
+        [Fact]
         public void Target_Set_transform_applies_to_expanded_value()
         {
             // With a transform present the value attribute is expanded first, so the

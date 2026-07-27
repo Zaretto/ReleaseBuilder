@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
@@ -172,30 +173,130 @@ namespace ReleaseBuilder
             return ExpandVars(att.Value);
         }
 
+        /// <summary>
+        /// Expands $ENVIRONMENT and ~VARIABLE~ references in a single left to right pass, so
+        /// substituted values are never re-scanned. An environment variable name may itself
+        /// contain ~VARIABLE~ segments (e.g. $PROJ_PORTAL_~TYPE~), allowing per-target secrets
+        /// to be held in the environment.
+        /// </summary>
         public string? ExpandVars(string? rv)
         {
             if (rv == null)
                 return "";
 
-            rv = Regex.Replace(rv, @"\$(\w+)", match =>
+            var sb = new StringBuilder(rv.Length);
+            var i = 0;
+            while (i < rv.Length)
             {
-                string variable = match.Groups[1].Value;
-                var envValue = Environment.GetEnvironmentVariable(variable);
-                if (envValue == null)
-                    throw new Exception("Environment variable not found: " + variable);
-                return envValue;
-            });
-            rv = Regex.Replace(rv, "\\~(.*?)\\~", match =>
-            {
-                string variable = match.Groups[1].Value;
-                if (_vars.ContainsKey(variable))
-                    return _vars[variable];
-                else
-                    throw new Exception("Variable not found: " + variable);
-            });
+                var c = rv[i];
 
-            return rv;
+                // $NAME, where NAME may embed ~VARIABLE~ segments. The name must start with a
+                // literal character so that "$~VAR~" keeps its old meaning of a literal $.
+                if (c == '$' && i + 1 < rv.Length && IsNameChar(rv[i + 1]))
+                {
+                    sb.Append(ExpandEnvReference(rv, ref i));
+                    continue;
+                }
+
+                // ~VARIABLE~
+                if (c == '~')
+                {
+                    var close = FindClosingTilde(rv, i + 1);
+                    if (close >= 0)
+                    {
+                        sb.Append(LookupVariable(rv.Substring(i + 1, close - i - 1)));
+                        i = close + 1;
+                        continue;
+                    }
+                }
+
+                sb.Append(c);
+                i++;
+            }
+
+            return sb.ToString();
         }
+
+        /// <summary>
+        /// Reads the environment variable reference starting at the $ in <paramref name="rv"/>[<paramref name="i"/>]
+        /// and returns its value, leaving <paramref name="i"/> on the first character after the reference.
+        /// </summary>
+        private string ExpandEnvReference(string rv, ref int i)
+        {
+            i++; // skip the $
+            var name = new StringBuilder();
+            // Name up to the first ~VARIABLE~ segment, kept for the fallback below.
+            string? literalName = null;
+            var literalEnd = -1;
+
+            while (i < rv.Length)
+            {
+                if (IsNameChar(rv[i]))
+                {
+                    name.Append(rv[i]);
+                    i++;
+                }
+                else if (rv[i] == '~')
+                {
+                    var close = FindClosingTilde(rv, i + 1);
+                    if (close < 0)
+                        break; // unpaired ~ is literal text, not part of the name
+                    if (literalName == null)
+                    {
+                        literalName = name.ToString();
+                        literalEnd = i;
+                    }
+                    name.Append(LookupVariable(rv.Substring(i + 1, close - i - 1)));
+                    i = close + 1;
+                }
+                else
+                    break;
+            }
+
+            var envName = name.ToString();
+            var envValue = Environment.GetEnvironmentVariable(envName);
+            if (envValue != null)
+                return envValue;
+
+            // A composed name that does not exist falls back to the literal part of the name,
+            // leaving the ~VARIABLE~ text to be expanded on its own as it was before.
+            if (literalName != null)
+            {
+                var literalValue = Environment.GetEnvironmentVariable(literalName);
+                if (literalValue != null)
+                {
+                    i = literalEnd;
+                    return literalValue;
+                }
+            }
+
+            throw new Exception("Environment variable not found: " + envName);
+        }
+
+        /// <summary>
+        /// Finds the closing ~ of a variable reference. A reference cannot span a line, so text
+        /// such as an npm version range ("~8.0.4" on one line, "~17.0.0" on the next) is literal.
+        /// </summary>
+        private static int FindClosingTilde(string rv, int from)
+        {
+            for (var j = from; j < rv.Length; j++)
+            {
+                if (rv[j] == '~')
+                    return j;
+                if (rv[j] == '\n')
+                    return -1;
+            }
+            return -1;
+        }
+
+        private string LookupVariable(string variable)
+        {
+            if (_vars.ContainsKey(variable))
+                return _vars[variable];
+            throw new Exception("Variable not found: " + variable);
+        }
+
+        private static bool IsNameChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
         private static void ArgCheck(string[] parts, int requiredLength, string transformation)
         {

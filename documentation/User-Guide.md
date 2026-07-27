@@ -276,7 +276,7 @@ Variables make your config reusable across different environments:
 
 - **Built-in variables**: `~VERSION~`, `~TYPE~`, `~PUBLISHROOT~`
 - **GitVersion variables**: `~SemVer~`, `~Major~`, `~Minor~`, `~Patch~`, etc.
-- **Environment variables**: `$HOME`, `$DEPLOY_PATH`
+- **Environment variables**: `$HOME`, `$DEPLOY_PATH`, and per-target names such as `$API_KEY_~TYPE~`
 - **Custom variables**: Define your own with `<Folder>` or `<Set>`
 
 Variables are referenced with tilde syntax: `~VARIABLE_NAME~`
@@ -1527,6 +1527,22 @@ Never hardcode passwords or API keys:
 ```xml
 <exec args="push --api-key $NUGET_API_KEY" />
 ```
+
+**Different secrets per target:** an environment variable name can include `~VARIABLE~`
+references, so `~TYPE~` (the active target) selects which secret is read:
+
+```xml
+<create file="portal.env">API_KEY=$PROJ_PORTAL_~TYPE~</create>
+```
+
+```bash
+export PROJ_PORTAL_live=live-key-value
+export PROJ_PORTAL_test=test-key-value
+```
+
+`--target live` reads `PROJ_PORTAL_live`, `--target test` reads `PROJ_PORTAL_test`, and the
+config holds no secrets at all. On Linux and macOS environment variable names are
+case-sensitive, so define them using the exact case of the target name.
 
 For secrets that belong to the release rather than the build machine — a machine key or a
 generated default password — use `<Set name="..." transform="random-key,32" />` so a new one
