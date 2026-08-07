@@ -1402,6 +1402,11 @@ the certificate unconstrained, which is what OpenIddict expects — and sets key
 on every build and invalidate every token already in circulation. Generate once, commit the
 password to your secret store, and let subsequent builds fail loudly if the file is missing.
 
+A failure stops the build, exactly as a failed `<check-certificate>` does — a refused
+overwrite, an unusable `issuer-file` or a bad attribute all abort rather than letting the
+build carry on packaging a release with no certificate in it. Use `on-fail="error"` if you
+would rather one run reported every problem in the config.
+
 #### Generating a Test Code-Signing Certificate
 
 The same action produces a throwaway code-signing certificate for test builds:

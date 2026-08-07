@@ -2401,6 +2401,18 @@ Defaults to refusing, so a config cannot silently regenerate a signing identity 
 **Default:** `CERT`
 **Purpose:** Prefix for the exported variables
 
+##### on-fail (optional)
+
+**Type:** `stop` | `error` | `warn`
+**Default:** `stop`
+**Purpose:** What a failure to generate the certificate does to the build
+
+Takes the same three values as [check-certificate's on-fail](#on-fail-optional), and defaults to
+`stop` for the same reason: a certificate that could not be written leaves everything downstream
+operating on a file that is missing or stale. Under `error` and `warn` the build continues, but
+the `~PREFIX_*~` variables are not published, so a later reference to one fails with
+"Variable not found".
+
 ##### active (optional)
 
 **Type:** String
@@ -2447,6 +2459,7 @@ Defaults to refusing, so a config cannot silently regenerate a signing identity 
 - Under `--dry-run` the certificate is generated in memory and the variables are published, but nothing is written — so a later `~CERT_THUMBPRINT~` reference still resolves during a dry run
 - A leaf signed with `issuer-file` receives an authority key identifier and a random 128-bit serial number
 - Generated PKCS#12 archives use the legacy password-based encryption that every version of `signtool` and `certutil` accepts
+- Anything that prevents the certificate being written — a bad attribute, a refused overwrite, an unusable `issuer-file` — stops the build by default
 
 **What this action does not do:** it creates certificates, it does not use them. Authenticode signing of an executable or MSI, RFC-3161 timestamping, enrolment against an external CA, and installing a root into the operating system's trust store all still require `signtool`, `osslsigncode` or `certutil` via `<exec>`.
 
@@ -3043,7 +3056,7 @@ Removes leading path components from output.
 
 ReleaseBuilder uses continue-and-report mode: it logs all errors and returns a non-zero exit code at the end, rather than stopping at the first error. This lets you see all problems in one run.
 
-A failed `<check-certificate>` returns `2`, and by default it is the one action that stops the run rather than continuing — see [on-fail](#on-fail-optional). There is no distinct exit code for it. Use `on-fail="error"` for continue-and-report, or `on-fail="warn"` with `~PREFIX_VALID~` if the build should carry on and decide for itself.
+A failed `<check-certificate>` or `<create-certificate>` returns `2`, and by default these are the actions that stop the run rather than continuing — see [on-fail](#on-fail-optional). There is no distinct exit code for it. Use `on-fail="error"` for continue-and-report, or `on-fail="warn"` with `~PREFIX_VALID~` if the build should carry on and decide for itself.
 
 **Viewing Errors:**
 Use `-v` or `-vv` for detailed error information:

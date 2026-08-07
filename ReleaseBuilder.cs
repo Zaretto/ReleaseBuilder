@@ -912,18 +912,35 @@ namespace ReleaseBuilder
 
         private void createCertificate(XElement actionNode, string path, string? newPathAttribute)
         {
+            // Parsed before anything else so that every failure below can apply the policy.
+            var onFail = GetAttribute(actionNode, "on-fail", "stop");
+            if (!TryParseFailurePolicy(onFail, out var policy))
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode,
+                    "create-certificate: unknown on-fail '{0}' (expected stop, error or warn)", onFail!);
+                return;
+            }
+
+            // The output path is not resolved yet, so failures here name the action only.
+            void Fail(string message) => certificateActionFailed(actionNode, policy, "create-certificate", null, new[] { message });
+
             var subject = _transform.ExpandVars(GetAttribute(actionNode, "subject", ""));
-            if (!CheckParamNotEmpty(subject, "create-certificate: subject is required"))
+            if (string.IsNullOrEmpty(subject))
+            {
+                Fail("subject is required");
                 return;
-            if (!CheckParamNotEmpty(GetAttribute(actionNode, "file", ""), "create-certificate: file is required"))
+            }
+            if (string.IsNullOrEmpty(GetAttribute(actionNode, "file", "")))
+            {
+                Fail("file is required");
                 return;
+            }
 
             var purposeName = GetAttribute(actionNode, "purpose", CertificatePurpose.Default);
             var purpose = CertificatePurpose.Resolve(purposeName);
             if (purpose == null)
             {
-                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unknown purpose '{0}' (expected one of {1})",
-                    purposeName!, string.Join(", ", CertificatePurpose.Names));
+                Fail($"unknown purpose '{purposeName}' (expected one of {string.Join(", ", CertificatePurpose.Names)})");
                 return;
             }
 
@@ -945,7 +962,7 @@ namespace ReleaseBuilder
             {
                 if (!CertificatePurpose.TryParseEkuList(ekuAttribute, out var ekus, out var invalidEku))
                 {
-                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unknown eku '{0}'", invalidEku!);
+                    Fail($"unknown eku '{invalidEku}'");
                     return;
                 }
                 options.Ekus = ekus;
@@ -956,7 +973,7 @@ namespace ReleaseBuilder
             {
                 if (!CertificatePurpose.TryParseKeyUsage(keyUsageAttribute, out var keyUsage, out var invalidUsage))
                 {
-                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unknown key-usage '{0}'", invalidUsage!);
+                    Fail($"unknown key-usage '{invalidUsage}'");
                     return;
                 }
                 options.KeyUsage = keyUsage;
@@ -964,7 +981,7 @@ namespace ReleaseBuilder
 
             if (!CertificateGenerator.IsValidKeyAlgorithm(options.KeyAlgorithm))
             {
-                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unsupported key '{0}' (expected rsa or ecdsa)", options.KeyAlgorithm);
+                Fail($"unsupported key '{options.KeyAlgorithm}' (expected rsa or ecdsa)");
                 return;
             }
 
@@ -975,14 +992,14 @@ namespace ReleaseBuilder
 
             if (!CertificateGenerator.IsValidKeySize(options.KeyAlgorithm, options.KeySize))
             {
-                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unsupported key-size {0} for {1}", options.KeySize, options.KeyAlgorithm);
+                Fail($"unsupported key-size {options.KeySize} for {options.KeyAlgorithm}");
                 return;
             }
 
             var hash = GetAttribute(actionNode, "hash", "sha256");
             if (hash != "sha256" && hash != "sha384" && hash != "sha512")
             {
-                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unsupported hash '{0}' (expected sha256, sha384 or sha512)", hash!);
+                Fail($"unsupported hash '{hash}' (expected sha256, sha384 or sha512)");
                 return;
             }
 
@@ -992,7 +1009,7 @@ namespace ReleaseBuilder
                 if (!DateTimeOffset.TryParse(notBefore, System.Globalization.CultureInfo.InvariantCulture,
                         System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsed))
                 {
-                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: cannot parse not-before '{0}' as a date", notBefore!);
+                    Fail($"cannot parse not-before '{notBefore}' as a date");
                     return;
                 }
                 options.NotBefore = parsed;
@@ -1000,7 +1017,7 @@ namespace ReleaseBuilder
 
             if (options.Days <= 0)
             {
-                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: days must be greater than zero");
+                Fail("days must be greater than zero");
                 return;
             }
 
@@ -1015,15 +1032,17 @@ namespace ReleaseBuilder
             }
             catch (Exception ex)
             {
-                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: {0}", ex.Message);
+                Fail(ex.Message);
                 return;
             }
+
+            // From here the output path is known, so failures name it.
+            void FailFor(string message) => certificateActionFailed(actionNode, policy, "create-certificate", file, new[] { message });
 
             var overwrite = GetAttribute(actionNode, "overwrite", false);
             if (!overwrite && File.Exists(file))
             {
-                LogForNodeWithDetails(LogMessageLevel.Error, actionNode,
-                    "create-certificate: {0} already exists — set overwrite=\"true\" to replace it", file);
+                FailFor("already exists — set overwrite=\"true\" to replace it");
                 return;
             }
 
@@ -1040,7 +1059,7 @@ namespace ReleaseBuilder
                                      });
                     if (string.IsNullOrEmpty(issuerPath))
                     {
-                        LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: issuer-file not found — {0}", issuerFile);
+                        FailFor($"issuer-file not found — {issuerFile}");
                         return;
                     }
                     try
@@ -1049,13 +1068,12 @@ namespace ReleaseBuilder
                     }
                     catch (CryptographicException)
                     {
-                        LogForNodeWithDetails(LogMessageLevel.Error, actionNode,
-                            "create-certificate: cannot open issuer-file {0} — wrong issuer-password, or not a PKCS#12 archive", issuerPath);
+                        FailFor($"cannot open issuer-file {issuerPath} — wrong issuer-password, or not a PKCS#12 archive");
                         return;
                     }
                     if (!issuer.HasPrivateKey)
                     {
-                        LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: issuer-file {0} has no private key", issuerPath);
+                        FailFor($"issuer-file {issuerPath} has no private key");
                         return;
                     }
                     options.Issuer = issuer;
@@ -1072,7 +1090,7 @@ namespace ReleaseBuilder
                 }
                 catch (Exception ex) when (ex is CryptographicException or ArgumentException)
                 {
-                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: {0}", ex.Message);
+                    FailFor(ex.Message);
                     return;
                 }
 
@@ -1130,19 +1148,33 @@ namespace ReleaseBuilder
         }
 
         /// <summary>
-        /// Reports every failed criterion, then applies the on-fail policy. Under Stop the build
-        /// is aborted here rather than at the end of the run, so nothing downstream gets to use a
-        /// certificate that failed its check.
+        /// Reports every failure, then applies the on-fail policy. Under Stop the build is aborted
+        /// here rather than at the end of the run, so nothing downstream gets to use a certificate
+        /// that failed its check or was never written.
         /// </summary>
-        private void certificateCheckFailed(XElement node, CertificateFailurePolicy policy, string file, IReadOnlyList<string> failures)
+        /// <param name="subject">The certificate path, when it is known. Omitted from the message when it is not.</param>
+        private void certificateActionFailed(XElement node, CertificateFailurePolicy policy, string action,
+            string? subject, IReadOnlyList<string> failures)
         {
             var level = policy == CertificateFailurePolicy.Warn ? LogMessageLevel.Warn : LogMessageLevel.Error;
+            var named = !string.IsNullOrEmpty(subject);
+
             foreach (var failure in failures)
-                LogForNodeWithDetails(level, node, "check-certificate {0}: {1}", file, failure);
+            {
+                if (named)
+                    LogForNodeWithDetails(level, node, "{0} {1}: {2}", action, subject!, failure);
+                else
+                    LogForNodeWithDetails(level, node, "{0}: {1}", action, failure);
+            }
 
             if (policy == CertificateFailurePolicy.Stop)
-                ThrowErrorForNode(node, $"check-certificate failed for {file} - stopping the build");
+                ThrowErrorForNode(node, named
+                    ? $"{action} failed for {subject} - stopping the build"
+                    : $"{action} failed - stopping the build");
         }
+
+        private void certificateCheckFailed(XElement node, CertificateFailurePolicy policy, string file, IReadOnlyList<string> failures) =>
+            certificateActionFailed(node, policy, "check-certificate", file, failures);
 
         private bool TryResolveRequiredEkus(XElement actionNode, out string[] ekus, out string? error)
         {

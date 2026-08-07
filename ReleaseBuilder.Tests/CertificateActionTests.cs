@@ -317,11 +317,56 @@ namespace ReleaseBuilder.Tests
             File.WriteAllText(path, "original");
 
             var rb = Builder("""      <create-certificate file="existing.pfx" subject="CN=Test" key-size="2048" />""");
-            var log = CaptureBuildLog(rb);
+            var log = RLogTests.CaptureConsole(() =>
+            {
+                RLog.Level = LogMessageLevel.Debug;
+                Assert.Throws<Exception>(() => rb.Build());
+            });
 
-            Assert.Equal(1, RLog.ErrorCount);
             Assert.Contains("already exists", log);
             Assert.Equal("original", File.ReadAllText(path));
+        }
+
+        /// <summary>
+        /// A certificate that could not be created is as good a reason to stop as one that failed
+        /// its check: everything downstream would run against a file that is missing or stale.
+        /// </summary>
+        [Fact]
+        public void Failed_generation_stops_the_build_immediately()
+        {
+            var rb = Builder("""
+                  <create-certificate file="bad.pfx" subject="CN=Test" key="dsa" />
+                  <create file="must-not-exist.txt">the build carried on</create>
+            """);
+
+            var ex = Assert.Throws<Exception>(() => rb.Build());
+            Assert.Contains("stopping the build", ex.Message);
+            Assert.False(File.Exists(Path.Combine(_tempDir, "must-not-exist.txt")));
+        }
+
+        [Fact]
+        public void Create_certificate_on_fail_error_reports_and_carries_on()
+        {
+            var rb = Builder("""
+                  <create-certificate file="bad.pfx" subject="CN=Test" key="dsa" on-fail="error" />
+                  <create file="written.txt">the build carried on</create>
+            """);
+
+            Assert.False(rb.Build());
+            Assert.Equal(1, RLog.ErrorCount);
+            Assert.Equal("the build carried on", ReadOutput("written.txt"));
+        }
+
+        [Fact]
+        public void Missing_issuer_file_stops_the_build()
+        {
+            var rb = Builder("""      <create-certificate file="leaf.pfx" subject="CN=Leaf" issuer-file="nowhere.pfx" key-size="2048" />""");
+            var log = RLogTests.CaptureConsole(() =>
+            {
+                RLog.Level = LogMessageLevel.Debug;
+                Assert.Throws<Exception>(() => rb.Build());
+            });
+            Assert.Contains("issuer-file not found", log);
         }
 
         [Fact]
@@ -385,9 +430,10 @@ namespace ReleaseBuilder.Tests
         [InlineData("""not-before="not-a-date" """)]
         [InlineData("""eku="nonsense" """)]
         [InlineData("""key-usage="nonsense" """)]
-        public void Bad_attribute_values_are_logged_errors_not_exceptions(string attribute)
+        public void Bad_attribute_values_are_reported_not_thrown_as_crashes(string attribute)
         {
-            var rb = Builder($"""      <create-certificate file="bad.pfx" subject="CN=Test" {attribute}/>""");
+            // on-fail="error" so the assertion is about the message rather than the abort.
+            var rb = Builder($"""      <create-certificate file="bad.pfx" subject="CN=Test" on-fail="error" {attribute}/>""");
             rb.Build();
             Assert.Equal(1, RLog.ErrorCount);
             Assert.False(File.Exists(Path.Combine(_tempDir, "bad.pfx")));

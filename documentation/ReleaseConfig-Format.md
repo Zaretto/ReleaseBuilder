@@ -1225,6 +1225,7 @@ The common case is an OpenID token-signing certificate — ABP.IO and OpenIddict
 | `issuer-password` | No | - | Passphrase for `issuer-file`. Registered as a secret |
 | `overwrite` | No | `false` | Refuse to replace an existing file unless `true` |
 | `prefix` | No | `CERT` | Prefix for the exported variables |
+| `on-fail` | No | `stop` | `stop` aborts the build at once; `error` reports and continues, exiting `2` at the end; `warn` reports and continues without affecting the exit code |
 | `active` | No | - | Standard `when,...` guard |
 
 <a id="certificate-purposes"></a>
@@ -1278,6 +1279,7 @@ Key usage names accepted by `key-usage`: `digital-signature`, `non-repudiation`,
 - Under `--dry-run` the certificate is generated in memory and the variables are published, but nothing is written. This keeps a later `~CERT_THUMBPRINT~` reference resolvable during a dry run.
 - `overwrite="false"` (the default) means a config cannot silently regenerate a signing identity on every build.
 - A leaf signed with `issuer-file` gets an authority key identifier and a random 128-bit serial.
+- A failure stops the build by default, on the same reasoning as `check-certificate`: everything downstream would run against a certificate file that is missing or stale. `on-fail` takes the same three values.
 
 **What still needs `<exec>`:** this action creates certificates, it does not use them. Authenticode signing of an executable or MSI, RFC-3161 timestamping, enrolment against an external CA, and installing a root into the operating system's trust store all still require `signtool`, `osslsigncode` or `certutil` via `<exec>`.
 
