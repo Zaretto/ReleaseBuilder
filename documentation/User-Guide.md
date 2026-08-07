@@ -1526,6 +1526,41 @@ ReleaseBuilder --target dev -vv
 2. Module names are case-insensitive
 3. Use `-v` to see which modules are being processed
 
+### Problem: "cannot open ...: wrong password, or the file is not a PKCS#12 archive"
+
+**Symptoms**: `<check-certificate>` fails even though the certificate file is present
+
+A wrong password and a file that is not a PKCS#12 archive are indistinguishable from the
+outside — the archive cannot be parsed either way — so both produce this one message.
+
+**Solutions**:
+1. Confirm the environment variable actually reached the build. `password="$PFX_PASSWORD"`
+   aborts the build with "Variable not found" if it is undefined, so if you got this message
+   instead, the variable was set but its value is wrong.
+2. Confirm the file is a PKCS#12 archive rather than a bare certificate. A `.cer` or `.crt`
+   holds only the public certificate; `<check-certificate>` needs the `.pfx`/`.p12` that
+   contains the private key. To check a public-only certificate, set `private-key="false"`.
+3. Passwords shorter than 8 characters are not redacted from the log, so `-v -v` will show
+   the value being used — useful for spotting stray whitespace or quoting.
+
+### Problem: Certificate Check Fails on One Machine Only
+
+**Symptoms**: `trusted="true"` passes locally but fails in CI, or vice versa
+
+Chain building uses the operating system's trust store unless `<trust-root>` children are
+supplied, and build agents rarely have the same roots installed as a developer machine.
+
+**Solutions**:
+1. Supply the root explicitly so the check does not depend on the machine:
+   ```xml
+   <check-certificate file="leaf.pfx" trusted="true">
+     <trust-root file="ca/internal-root.cer" />
+   </check-certificate>
+   ```
+2. If the certificate is self-signed, `trusted="true"` will never pass without listing the
+   certificate itself as a `<trust-root>`. That is expected — see
+   [Generating a Token-Signing Certificate](#generating-a-token-signing-certificate).
+
 ### Problem: Non-Zero Exit Code But Build Looks Fine
 
 **Symptoms**: Exit code 2 but no obvious failures in the log
@@ -1673,6 +1708,11 @@ into the `args`: a value ReleaseBuilder never registers cannot be redacted. Unde
 Actions the value is also passed to the runner with `::add-mask::` so other steps mask it.
 The packaged files themselves are not redacted — putting the secret in the artefact is the
 point of the variable.
+
+Certificate passwords are the same case, and need no marking:
+`<check-certificate password="$SIGNING_PFX_PASSWORD">` and the `password`/`issuer-password`
+attributes of `<create-certificate>` register their values automatically, because a password
+attribute is a secret by definition.
 
 For secrets that belong to the release rather than the build machine — a machine key or a
 generated default password — use `<Set name="..." transform="random-key,32" />` so a new one

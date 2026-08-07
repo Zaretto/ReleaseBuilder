@@ -400,6 +400,8 @@ ReleaseBuilder -d --target staging
 - Validates path existence
 - Reports each action it would take (prefixed with `[dry-run]`)
 - Collects and reports the artefact list
+- Validates certificates for real (`check-certificate`) — the check mutates nothing, and confirming the signing certificate is present and in date is one of the most useful things a dry run can report
+- Generates certificates in memory (`create-certificate`) and publishes their `~CERT_*~` variables, without writing the file, so a later reference to one still resolves
 
 **What dry-run skips:**
 - File deletion (`clean`)
@@ -407,6 +409,7 @@ ReleaseBuilder -d --target staging
 - XML editing (`xml-edit`)
 - File copying (`copy`, `modify`)
 - External process execution (`exec`)
+- Writing the certificate file (`create-certificate`)
 - Archive creation and file copying in `Process()`
 
 **Use Cases:**
@@ -1578,6 +1581,7 @@ Redaction happens on the way to the console, so it applies to every message: var
 - Redaction matches the **value**, not the variable name. A secret used in three places is hidden in all three.
 - Values shorter than 8 characters are not registered — redacting them would blank out unrelated text throughout the log.
 - `random-key` output registers itself; `secret="true"` is not needed for it.
+- The `password` and `issuer-password` attributes of `<check-certificate>` and `<create-certificate>` register themselves too — a password is a secret by definition, so there is no `secret` attribute to set on them.
 - Registration is process-wide, so a secret marked in a parent config stays redacted inside nested `<ReleaseBuilder>` builds.
 - Reference secrets through a marked `<Set>` rather than using `$ENV_VAR` directly in an `<exec>` argument: a value the tool never registers cannot be redacted.
 - **Artefact contents are not redacted.** Writing a secret into a packaged file is the intended use of these variables; the redaction applies to log output only.
