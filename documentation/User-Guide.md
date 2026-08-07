@@ -631,9 +631,14 @@ a second with a message that says what is wrong:
 </Artefacts>
 ```
 
+The check stops the build the moment it fails, so neither `<exec>` below it runs. That is the
+default and the reason the action exists — an error that merely got logged would let the
+publish and the signing attempt proceed anyway, and you would be reading the failure at the
+end of a twenty-minute build instead of a one-second one.
+
 The password is registered as a secret automatically, so it never appears in the log.
 
-To warn rather than fail — useful when signing is optional on developer machines — use
+To warn rather than stop — useful when signing is optional on developer machines — use
 `on-fail="warn"` and gate the signing step on the result:
 
 ```xml

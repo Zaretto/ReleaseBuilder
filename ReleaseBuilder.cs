@@ -803,19 +803,30 @@ namespace ReleaseBuilder
                                         new List<string>(new []{Directory.GetCurrentDirectory()}),
                                      });
 
-            var warnOnly = string.Equals(GetAttribute(actionNode, "on-fail", "error"), "warn", StringComparison.OrdinalIgnoreCase);
-            var failureLevel = warnOnly ? LogMessageLevel.Warn : LogMessageLevel.Error;
+            var onFail = GetAttribute(actionNode, "on-fail", "stop");
+            if (!TryParseFailurePolicy(onFail, out var policy))
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode,
+                    "check-certificate: unknown on-fail '{0}' (expected stop, error or warn)", onFail!);
+                return;
+            }
             var prefix = GetAttribute(actionNode, "prefix", "CERT");
 
             if (string.IsNullOrEmpty(certPath))
             {
-                LogForNodeWithDetails(failureLevel, actionNode, "check-certificate: certificate not found — {0}", file!);
                 addvar(prefix + "_VALID", "0");
+                certificateCheckFailed(actionNode, policy, file!, new[] { "certificate not found" });
                 return;
             }
 
-            if (!TryResolveRequiredEkus(actionNode, out var ekus))
+            // A check that cannot run leaves the build unverified, so a malformed attribute is
+            // treated the same as a failed criterion — under the default policy it stops the build.
+            if (!TryResolveRequiredEkus(actionNode, out var ekus, out var ekuError))
+            {
+                addvar(prefix + "_VALID", "0");
+                certificateCheckFailed(actionNode, policy, certPath, new[] { ekuError! });
                 return;
+            }
 
             var options = new CertificateCheckOptions
             {
@@ -836,7 +847,9 @@ namespace ReleaseBuilder
             {
                 if (!CertificateGenerator.IsValidKeyAlgorithm(keyAlgorithm))
                 {
-                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "check-certificate: unsupported key-algorithm '{0}' (expected rsa or ecdsa)", keyAlgorithm!);
+                    addvar(prefix + "_VALID", "0");
+                    certificateCheckFailed(actionNode, policy, certPath,
+                        new[] { $"unsupported key-algorithm '{keyAlgorithm}' (expected rsa or ecdsa)" });
                     return;
                 }
                 options.RequiredKeyAlgorithm = keyAlgorithm;
@@ -855,7 +868,8 @@ namespace ReleaseBuilder
                                      });
                     if (string.IsNullOrEmpty(rootPath))
                     {
-                        LogForNodeWithDetails(LogMessageLevel.Error, rootNode, "check-certificate: trust-root not found — {0}", rootFile!);
+                        addvar(prefix + "_VALID", "0");
+                        certificateCheckFailed(rootNode, policy, certPath, new[] { $"trust-root not found — {rootFile}" });
                         return;
                     }
                     try
@@ -864,7 +878,8 @@ namespace ReleaseBuilder
                     }
                     catch (CryptographicException)
                     {
-                        LogForNodeWithDetails(LogMessageLevel.Error, rootNode, "check-certificate: cannot read trust-root {0} as a certificate", rootPath);
+                        addvar(prefix + "_VALID", "0");
+                        certificateCheckFailed(rootNode, policy, certPath, new[] { $"cannot read trust-root {rootPath} as a certificate" });
                         return;
                     }
                 }
@@ -885,9 +900,7 @@ namespace ReleaseBuilder
                 }
                 else
                 {
-                    // All failed criteria are reported together rather than stopping at the first.
-                    foreach (var failure in result.Failures)
-                        LogForNodeWithDetails(failureLevel, actionNode, "check-certificate {0}: {1}", certPath, failure);
+                    certificateCheckFailed(actionNode, policy, certPath, result.Failures);
                 }
             }
             finally
@@ -1089,9 +1102,52 @@ namespace ReleaseBuilder
             }
         }
 
-        private bool TryResolveRequiredEkus(XElement actionNode, out string[] ekus)
+        /// <summary>
+        /// What a failed &lt;check-certificate&gt; does to the build.
+        /// </summary>
+        private enum CertificateFailurePolicy
+        {
+            /// <summary>Abort the build immediately. The default: a pre-flight check that lets
+            /// the build continue is no check at all.</summary>
+            Stop,
+            /// <summary>Log an error and carry on, so the run reports every problem and exits 2
+            /// at the end — the continue-and-report behaviour the other actions use.</summary>
+            Error,
+            /// <summary>Log a warning and carry on; the exit code is unaffected.</summary>
+            Warn,
+        }
+
+        private static bool TryParseFailurePolicy(string? value, out CertificateFailurePolicy policy)
+        {
+            switch ((value ?? "").ToLowerInvariant())
+            {
+                case "":
+                case "stop": policy = CertificateFailurePolicy.Stop; return true;
+                case "error": policy = CertificateFailurePolicy.Error; return true;
+                case "warn": policy = CertificateFailurePolicy.Warn; return true;
+                default: policy = CertificateFailurePolicy.Stop; return false;
+            }
+        }
+
+        /// <summary>
+        /// Reports every failed criterion, then applies the on-fail policy. Under Stop the build
+        /// is aborted here rather than at the end of the run, so nothing downstream gets to use a
+        /// certificate that failed its check.
+        /// </summary>
+        private void certificateCheckFailed(XElement node, CertificateFailurePolicy policy, string file, IReadOnlyList<string> failures)
+        {
+            var level = policy == CertificateFailurePolicy.Warn ? LogMessageLevel.Warn : LogMessageLevel.Error;
+            foreach (var failure in failures)
+                LogForNodeWithDetails(level, node, "check-certificate {0}: {1}", file, failure);
+
+            if (policy == CertificateFailurePolicy.Stop)
+                ThrowErrorForNode(node, $"check-certificate failed for {file} - stopping the build");
+        }
+
+        private bool TryResolveRequiredEkus(XElement actionNode, out string[] ekus, out string? error)
         {
             ekus = Array.Empty<string>();
+            error = null;
 
             var purposeName = GetAttribute(actionNode, "purpose", "");
             if (!string.IsNullOrEmpty(purposeName))
@@ -1099,8 +1155,7 @@ namespace ReleaseBuilder
                 var purpose = CertificatePurpose.Resolve(purposeName);
                 if (purpose == null)
                 {
-                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "check-certificate: unknown purpose '{0}' (expected one of {1})",
-                        purposeName, string.Join(", ", CertificatePurpose.Names));
+                    error = $"unknown purpose '{purposeName}' (expected one of {string.Join(", ", CertificatePurpose.Names)})";
                     return false;
                 }
                 ekus = purpose.Ekus.ToArray();
@@ -1111,7 +1166,7 @@ namespace ReleaseBuilder
             {
                 if (!CertificatePurpose.TryParseEkuList(ekuAttribute, out var parsed, out var invalid))
                 {
-                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "check-certificate: unknown eku '{0}'", invalid!);
+                    error = $"unknown eku '{invalid}'";
                     return false;
                 }
                 ekus = parsed;

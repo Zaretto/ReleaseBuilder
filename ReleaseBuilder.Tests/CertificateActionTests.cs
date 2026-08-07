@@ -83,16 +83,54 @@ namespace ReleaseBuilder.Tests
             Assert.Equal(0, RLog.ErrorCount);
         }
 
+        /// <summary>
+        /// The whole point of a pre-flight check is that the build does not proceed. The default
+        /// on-fail="stop" aborts immediately rather than logging an error and carrying on, which
+        /// would let a signing step run against a certificate that had already failed.
+        /// </summary>
         [Fact]
-        public void Expired_certificate_fails_the_build_with_the_config_line_number()
+        public void Expired_certificate_stops_the_build_immediately()
+        {
+            var pfx = WritePfx("expired.pfx", days: 1, startOffsetDays: -400);
+            var rb = Builder($"""
+                  <check-certificate file="{pfx}" />
+                  <create file="must-not-exist.txt">the build carried on</create>
+            """);
+
+            var ex = Assert.Throws<Exception>(() => rb.Build());
+            Assert.Contains("stopping the build", ex.Message);
+            Assert.False(File.Exists(Path.Combine(_tempDir, "must-not-exist.txt")));
+        }
+
+        [Fact]
+        public void Stopped_build_reports_the_reason_with_the_config_line_number()
         {
             var pfx = WritePfx("expired.pfx", days: 1, startOffsetDays: -400);
             var rb = Builder($"""      <check-certificate file="{pfx}" />""");
-            var log = CaptureBuildLog(rb);
 
-            Assert.Equal(1, RLog.ErrorCount);
+            var log = RLogTests.CaptureConsole(() =>
+            {
+                RLog.Level = LogMessageLevel.Debug;
+                Assert.Throws<Exception>(() => rb.Build());
+            });
+
             Assert.Contains("expired", log);
             Assert.Contains("Line:", log);
+        }
+
+        /// <summary>on-fail="error" keeps the continue-and-report behaviour the other actions use.</summary>
+        [Fact]
+        public void On_fail_error_reports_and_carries_on()
+        {
+            var pfx = WritePfx("expired.pfx", days: 1, startOffsetDays: -400);
+            var rb = Builder($"""
+                  <check-certificate file="{pfx}" on-fail="error" />
+                  <create file="written.txt">the build carried on</create>
+            """);
+
+            Assert.False(rb.Build());
+            Assert.Equal(1, RLog.ErrorCount);
+            Assert.Equal("the build carried on", ReadOutput("written.txt"));
         }
 
         [Fact]
@@ -109,20 +147,23 @@ namespace ReleaseBuilder.Tests
         }
 
         [Fact]
-        public void Missing_certificate_fails_the_build()
+        public void Missing_certificate_stops_the_build()
         {
             var rb = Builder("""      <check-certificate file="nowhere.pfx" />""");
-            rb.Build();
-            Assert.Equal(1, RLog.ErrorCount);
+            Assert.Throws<Exception>(() => rb.Build());
         }
 
         [Fact]
-        public void Min_days_failure_is_reported()
+        public void Min_days_failure_stops_the_build()
         {
             var pfx = WritePfx("soon.pfx", days: 6);
             var rb = Builder($"""      <check-certificate file="{pfx}" min-days="30" />""");
-            var log = CaptureBuildLog(rb);
-            Assert.Equal(1, RLog.ErrorCount);
+
+            var log = RLogTests.CaptureConsole(() =>
+            {
+                RLog.Level = LogMessageLevel.Debug;
+                Assert.Throws<Exception>(() => rb.Build());
+            });
             Assert.Contains("min-days", log);
         }
 
@@ -176,8 +217,7 @@ namespace ReleaseBuilder.Tests
         {
             var pfx = WritePfx("server.pfx", ekus: new[] { CertificatePurpose.ServerAuthOid });
             var rb = Builder($"""      <check-certificate file="{pfx}" purpose="code-signing" />""");
-            rb.Build();
-            Assert.Equal(1, RLog.ErrorCount);
+            Assert.Throws<Exception>(() => rb.Build());
         }
 
         [Fact]
@@ -185,8 +225,11 @@ namespace ReleaseBuilder.Tests
         {
             var pfx = WritePfx("signing.pfx");
             var rb = Builder($"""      <check-certificate file="{pfx}" purpose="nonsense" />""");
-            var log = CaptureBuildLog(rb);
-            Assert.Equal(1, RLog.ErrorCount);
+            var log = RLogTests.CaptureConsole(() =>
+            {
+                RLog.Level = LogMessageLevel.Debug;
+                Assert.Throws<Exception>(() => rb.Build());
+            });
             Assert.Contains("unknown purpose", log);
         }
 
@@ -326,8 +369,11 @@ namespace ReleaseBuilder.Tests
                   <create-certificate file="leaf.pfx" subject="CN=Test Leaf" issuer-file="root.pfx" key-size="2048" />
                   <check-certificate file="leaf.pfx" trusted="true" />
             """);
-            var log = CaptureBuildLog(rb);
-            Assert.Equal(1, RLog.ErrorCount);
+            var log = RLogTests.CaptureConsole(() =>
+            {
+                RLog.Level = LogMessageLevel.Debug;
+                Assert.Throws<Exception>(() => rb.Build());
+            });
             Assert.Contains("chain is not trusted", log);
         }
 
@@ -371,8 +417,7 @@ namespace ReleaseBuilder.Tests
         {
             var pfx = WritePfx("expired.pfx", days: 1, startOffsetDays: -400);
             var rb = Builder($"""      <check-certificate file="{pfx}" />""", dryRun: true);
-            rb.Build();
-            Assert.Equal(1, RLog.ErrorCount);
+            Assert.Throws<Exception>(() => rb.Build());
         }
 
         // ------------------------------------------------------------------
@@ -394,8 +439,7 @@ namespace ReleaseBuilder.Tests
             var (os, _, _) = ReleaseBuilder.GetPlatformInfo();
             var pfx = WritePfx("expired.pfx", days: 1, startOffsetDays: -400);
             var rb = Builder($"""      <check-certificate file="{pfx}" active="when,~OS~,==,{os}" />""");
-            rb.Build();
-            Assert.Equal(1, RLog.ErrorCount);
+            Assert.Throws<Exception>(() => rb.Build());
         }
 
         /// <summary>active= was previously ignored on build actions; it now applies to all of them.</summary>

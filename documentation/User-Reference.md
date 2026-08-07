@@ -2191,9 +2191,21 @@ Separators (`:`, `-`, spaces) are ignored and matching is case-insensitive, so a
 
 ##### on-fail (optional)
 
-**Type:** `error` | `warn`
-**Default:** `error`
-**Purpose:** Whether a failed check fails the build
+**Type:** `stop` | `error` | `warn`
+**Default:** `stop`
+**Purpose:** What a failed check does to the build
+
+| Value | Effect |
+|-------|--------|
+| `stop` | Abort the build immediately; exit code `2`. Nothing after the check runs |
+| `error` | Report the failures and continue; exit code `2` at the end of the run |
+| `warn` | Report at Warn and continue; the exit code is unaffected |
+
+`stop` is the default because a check that lets the build proceed is not a check — a signing
+step would run against a certificate already known to be bad, and a long build would complete
+before reporting a problem detectable at the start. Use `error` when you would rather one run
+surfaced every problem in the config, and `warn` when the build should decide for itself using
+`~PREFIX_VALID~`.
 
 ##### active (optional)
 
@@ -2242,7 +2254,8 @@ Zero or more roots to build the chain against instead of the operating system's 
 - A certificate with **no** EKU extension satisfies any `eku`/`purpose` requirement, with a warning — per RFC 5280 an absent EKU means unconstrained, and Authenticode accepts it
 - All date comparisons are performed in UTC
 - Runs for real under `--dry-run`; it mutates nothing, and confirming the certificate is present and in date is the most useful check a dry run can make
-- A failure is reported with the config line and column, increments the error counter, and the build exits `2` (BuildError). `on-fail="warn"` logs at Warn instead and does not affect the exit code
+- Every failed criterion is reported with its config line and column; `on-fail` then decides whether the build stops there, continues and fails at the end, or merely warns
+- Anything that prevents the check running — a missing file, an unreadable trust root, an unknown `purpose` or `eku` — is treated as a failed check, since it leaves the build just as unverified
 
 **Exported variables:** see [Certificate Variables](#certificate-variables).
 
@@ -3030,7 +3043,7 @@ Removes leading path components from output.
 
 ReleaseBuilder uses continue-and-report mode: it logs all errors and returns a non-zero exit code at the end, rather than stopping at the first error. This lets you see all problems in one run.
 
-A failed `<check-certificate>` is a build failure like any other and returns `2`; there is no distinct exit code for it. Use `on-fail="warn"` and `~PREFIX_VALID~` if the build should carry on and decide for itself.
+A failed `<check-certificate>` returns `2`, and by default it is the one action that stops the run rather than continuing — see [on-fail](#on-fail-optional). There is no distinct exit code for it. Use `on-fail="error"` for continue-and-report, or `on-fail="warn"` with `~PREFIX_VALID~` if the build should carry on and decide for itself.
 
 **Viewing Errors:**
 Use `-v` or `-vv` for detailed error information:

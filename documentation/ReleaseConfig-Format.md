@@ -1147,7 +1147,7 @@ Validates a PKCS#12 (`.pfx` / `.p12`) certificate before the build depends on it
 | `thumbprint` | No | - | Expected SHA-1 thumbprint. `:`, `-` and spaces are ignored, case-insensitive |
 | `subject` | No | - | Case-insensitive substring the subject DN must contain |
 | `prefix` | No | `CERT` | Prefix for the exported variables |
-| `on-fail` | No | `error` | `error` fails the build; `warn` logs and continues |
+| `on-fail` | No | `stop` | `stop` aborts the build at once; `error` reports and continues, exiting `2` at the end; `warn` reports and continues without affecting the exit code |
 | `active` | No | - | Standard `when,...` guard |
 
 **Child element `<trust-root>`:** zero or more roots to build the chain against, used instead of the operating system's trust store. Takes `file` (DER or PEM `.cer`/`.crt`, or a `.pfx`) and an optional `password`. This is how an internal CA is validated without installing anything on the build machine.
@@ -1180,7 +1180,13 @@ Validates a PKCS#12 (`.pfx` / `.p12`) certificate before the build depends on it
 
 **Exit code interaction:**
 
-A failure is logged via `LogForNodeWithDetails` with the config line and column, increments the error counter, and the build exits `2` (BuildError). `on-fail="warn"` logs at Warn instead and does not affect the exit code — `~PREFIX_VALID~` still reports the verdict.
+Every failed criterion is logged with its config line and column, and then `on-fail` decides what happens to the build.
+
+`stop`, the default, aborts immediately and exits `2` (BuildError). Nothing after the check runs. This is the point of a pre-flight check: continuing would let a signing step use a certificate that has already failed, or let a twenty-minute build run to completion before reporting a problem that was known at the start.
+
+`error` reports the failures and carries on, exiting `2` at the end — the continue-and-report behaviour the other build actions use. Choose it when you want one run to surface every problem in the config rather than only the first.
+
+`warn` reports at Warn and does not affect the exit code. Under both `error` and `warn`, `~PREFIX_VALID~` carries the verdict so a later action can test it.
 
 ---
 
