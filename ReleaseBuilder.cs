@@ -11,6 +11,8 @@ using System.Reflection.Metadata.Ecma335;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics.Arm;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml;
@@ -123,7 +125,9 @@ namespace ReleaseBuilder
         }
         private bool LoadConfigFromXml(FileInfo configFile, string target, bool nobuild)
         {
-            var doc = XDocument.Load(configFile.FullName);
+            // SetLineInfo is what makes LogForNodeWithDetails/ThrowErrorForNode able to report
+            // where in the config the problem is; without it IXmlLineInfo.HasLineInfo() is false.
+            var doc = XDocument.Load(configFile.FullName, LoadOptions.SetLineInfo);
             XPathNavigator navigator = doc.CreateNavigator();
             foreach (XElement node in doc.Root.Nodes().OfType<XElement>())
             {
@@ -441,6 +445,12 @@ namespace ReleaseBuilder
 
             foreach (XElement actionNode in artefactsNode.Elements())
             {
+                // active= was previously only honoured on Artefacts and ReleaseBuilder; it was
+                // silently ignored here. Reading it is additive — nothing sets it on a build
+                // action today because it did nothing.
+                if (!When(actionNode))
+                    continue;
+
                 var action = actionNode.Name.ToString().ToLower();
                 switch (action)
                 {
@@ -764,11 +774,420 @@ namespace ReleaseBuilder
                             }
                             break;
                         }
+                    case "check-certificate":
+                        {
+                            checkCertificate(actionNode, path, newPathAttribute);
+                            break;
+                        }
+                    case "create-certificate":
+                        {
+                            createCertificate(actionNode, path, newPathAttribute);
+                            break;
+                        }
                     default:
                         LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "Unkown artefact tag {0}", action);
                         break;
                 }
             }
+        }
+
+        private void checkCertificate(XElement actionNode, string path, string? newPathAttribute)
+        {
+            var file = _transform.ExpandVars(GetAttribute<string>(actionNode, "file", ""));
+            if (!CheckParamNotEmpty(file, "check-certificate: file is required"))
+                return;
+
+            var certPath = PathFinder.FindFile(file, new[] {
+                                        new List<string>(new []{path,newPathAttribute}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+
+            var warnOnly = string.Equals(GetAttribute(actionNode, "on-fail", "error"), "warn", StringComparison.OrdinalIgnoreCase);
+            var failureLevel = warnOnly ? LogMessageLevel.Warn : LogMessageLevel.Error;
+            var prefix = GetAttribute(actionNode, "prefix", "CERT");
+
+            if (string.IsNullOrEmpty(certPath))
+            {
+                LogForNodeWithDetails(failureLevel, actionNode, "check-certificate: certificate not found — {0}", file!);
+                addvar(prefix + "_VALID", "0");
+                return;
+            }
+
+            if (!TryResolveRequiredEkus(actionNode, out var ekus))
+                return;
+
+            var options = new CertificateCheckOptions
+            {
+                File = certPath,
+                Password = ResolvePassword(actionNode, "password"),
+                MinDays = GetAttribute(actionNode, "min-days", 0),
+                RequirePrivateKey = GetAttribute(actionNode, "private-key", true),
+                RequiredEkus = ekus,
+                MinKeySize = GetAttribute(actionNode, "min-key-size", 0),
+                RequireTrustedChain = GetAttribute(actionNode, "trusted", false),
+                CheckRevocation = GetAttribute(actionNode, "revocation", false),
+                ExpectedThumbprint = NullIfEmpty(GetAttribute(actionNode, "thumbprint", "")),
+                ExpectedSubject = NullIfEmpty(_transform.ExpandVars(GetAttribute(actionNode, "subject", ""))),
+            };
+
+            var keyAlgorithm = GetAttribute(actionNode, "key-algorithm", "");
+            if (!string.IsNullOrEmpty(keyAlgorithm))
+            {
+                if (!CertificateGenerator.IsValidKeyAlgorithm(keyAlgorithm))
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "check-certificate: unsupported key-algorithm '{0}' (expected rsa or ecdsa)", keyAlgorithm!);
+                    return;
+                }
+                options.RequiredKeyAlgorithm = keyAlgorithm;
+            }
+
+            var trustRoots = new List<X509Certificate2>();
+            try
+            {
+                foreach (var rootNode in actionNode.Elements("trust-root"))
+                {
+                    var rootFile = _transform.ExpandVars(GetAttribute<string>(rootNode, "file", ""));
+                    var rootPath = PathFinder.FindFile(rootFile, new[] {
+                                        new List<string>(new []{path,newPathAttribute}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+                    if (string.IsNullOrEmpty(rootPath))
+                    {
+                        LogForNodeWithDetails(LogMessageLevel.Error, rootNode, "check-certificate: trust-root not found — {0}", rootFile!);
+                        return;
+                    }
+                    try
+                    {
+                        trustRoots.Add(CertificateChecker.LoadTrustRoot(File.ReadAllBytes(rootPath), ResolvePassword(rootNode, "password")));
+                    }
+                    catch (CryptographicException)
+                    {
+                        LogForNodeWithDetails(LogMessageLevel.Error, rootNode, "check-certificate: cannot read trust-root {0} as a certificate", rootPath);
+                        return;
+                    }
+                }
+                options.TrustRoots = trustRoots;
+
+                // Deliberately runs for real under --dry-run: it changes nothing, and verifying
+                // the certificate is present and in date is the most useful thing a dry run can do.
+                var result = CertificateChecker.Check(options);
+                exportCertificateVars(prefix, result);
+
+                foreach (var warning in result.Warnings)
+                    LogForNodeWithDetails(LogMessageLevel.Warn, actionNode, "check-certificate {0}: {1}", certPath, warning);
+
+                if (result.Ok)
+                {
+                    RLog.InfoFormat("Certificate {0} is valid — {1}, expires {2} ({3} days)",
+                        certPath, result.Subject, CertificateChecker.Format(result.NotAfterUtc), result.DaysRemaining);
+                }
+                else
+                {
+                    // All failed criteria are reported together rather than stopping at the first.
+                    foreach (var failure in result.Failures)
+                        LogForNodeWithDetails(failureLevel, actionNode, "check-certificate {0}: {1}", certPath, failure);
+                }
+            }
+            finally
+            {
+                foreach (var root in trustRoots)
+                    root.Dispose();
+            }
+        }
+
+        private void createCertificate(XElement actionNode, string path, string? newPathAttribute)
+        {
+            var subject = _transform.ExpandVars(GetAttribute(actionNode, "subject", ""));
+            if (!CheckParamNotEmpty(subject, "create-certificate: subject is required"))
+                return;
+            if (!CheckParamNotEmpty(GetAttribute(actionNode, "file", ""), "create-certificate: file is required"))
+                return;
+
+            var purposeName = GetAttribute(actionNode, "purpose", CertificatePurpose.Default);
+            var purpose = CertificatePurpose.Resolve(purposeName);
+            if (purpose == null)
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unknown purpose '{0}' (expected one of {1})",
+                    purposeName!, string.Join(", ", CertificatePurpose.Names));
+                return;
+            }
+
+            var options = new CertificateGenerateOptions
+            {
+                Subject = subject!,
+                Ekus = purpose.Ekus,
+                KeyUsage = purpose.KeyUsage,
+                Ca = purpose.Ca,
+                Days = GetAttribute(actionNode, "days", CertificateGenerateOptions.DefaultDays),
+                Password = ResolvePassword(actionNode, "password"),
+                HashAlgorithm = GetAttribute(actionNode, "hash", "sha256")!,
+                KeyAlgorithm = GetAttribute(actionNode, "key", "rsa")!,
+            };
+
+            // eku= and key-usage= override whatever the purpose implied.
+            var ekuAttribute = GetAttribute(actionNode, "eku", "");
+            if (!string.IsNullOrEmpty(ekuAttribute))
+            {
+                if (!CertificatePurpose.TryParseEkuList(ekuAttribute, out var ekus, out var invalidEku))
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unknown eku '{0}'", invalidEku!);
+                    return;
+                }
+                options.Ekus = ekus;
+            }
+
+            var keyUsageAttribute = GetAttribute(actionNode, "key-usage", "");
+            if (!string.IsNullOrEmpty(keyUsageAttribute))
+            {
+                if (!CertificatePurpose.TryParseKeyUsage(keyUsageAttribute, out var keyUsage, out var invalidUsage))
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unknown key-usage '{0}'", invalidUsage!);
+                    return;
+                }
+                options.KeyUsage = keyUsage;
+            }
+
+            if (!CertificateGenerator.IsValidKeyAlgorithm(options.KeyAlgorithm))
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unsupported key '{0}' (expected rsa or ecdsa)", options.KeyAlgorithm);
+                return;
+            }
+
+            options.KeySize = GetAttribute(actionNode, "key-size",
+                CertificateGenerator.IsEcdsa(options.KeyAlgorithm)
+                    ? CertificateGenerateOptions.DefaultEcdsaKeySize
+                    : CertificateGenerateOptions.DefaultRsaKeySize);
+
+            if (!CertificateGenerator.IsValidKeySize(options.KeyAlgorithm, options.KeySize))
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unsupported key-size {0} for {1}", options.KeySize, options.KeyAlgorithm);
+                return;
+            }
+
+            var hash = GetAttribute(actionNode, "hash", "sha256");
+            if (hash != "sha256" && hash != "sha384" && hash != "sha512")
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: unsupported hash '{0}' (expected sha256, sha384 or sha512)", hash!);
+                return;
+            }
+
+            var notBefore = GetAttribute(actionNode, "not-before", "");
+            if (!string.IsNullOrEmpty(notBefore))
+            {
+                if (!DateTimeOffset.TryParse(notBefore, System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsed))
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: cannot parse not-before '{0}' as a date", notBefore!);
+                    return;
+                }
+                options.NotBefore = parsed;
+            }
+
+            if (options.Days <= 0)
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: days must be greater than zero");
+                return;
+            }
+
+            var dnsNames = _transform.ExpandVars(GetAttribute(actionNode, "dns-names", ""));
+            if (!string.IsNullOrEmpty(dnsNames))
+                options.DnsNames = dnsNames.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+            string file;
+            try
+            {
+                file = GetFilenameFromNode(path, newPathAttribute, actionNode);
+            }
+            catch (Exception ex)
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: {0}", ex.Message);
+                return;
+            }
+
+            var overwrite = GetAttribute(actionNode, "overwrite", false);
+            if (!overwrite && File.Exists(file))
+            {
+                LogForNodeWithDetails(LogMessageLevel.Error, actionNode,
+                    "create-certificate: {0} already exists — set overwrite=\"true\" to replace it", file);
+                return;
+            }
+
+            var issuerFile = _transform.ExpandVars(GetAttribute(actionNode, "issuer-file", ""));
+            X509Certificate2? issuer = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(issuerFile))
+                {
+                    var issuerPath = PathFinder.FindFile(issuerFile, new[] {
+                                        new List<string>(new []{path,newPathAttribute}),
+                                        new List<string>(new []{Root}),
+                                        new List<string>(new []{Directory.GetCurrentDirectory()}),
+                                     });
+                    if (string.IsNullOrEmpty(issuerPath))
+                    {
+                        LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: issuer-file not found — {0}", issuerFile);
+                        return;
+                    }
+                    try
+                    {
+                        issuer = CertificateChecker.Load(File.ReadAllBytes(issuerPath), ResolvePassword(actionNode, "issuer-password"));
+                    }
+                    catch (CryptographicException)
+                    {
+                        LogForNodeWithDetails(LogMessageLevel.Error, actionNode,
+                            "create-certificate: cannot open issuer-file {0} — wrong issuer-password, or not a PKCS#12 archive", issuerPath);
+                        return;
+                    }
+                    if (!issuer.HasPrivateKey)
+                    {
+                        LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: issuer-file {0} has no private key", issuerPath);
+                        return;
+                    }
+                    options.Issuer = issuer;
+                }
+
+                if (issuer == null && purpose.WarnIfSelfSigned)
+                    RLog.WarnFormat("create-certificate: {0} is self-signed and will not be trusted outside machines that have been told to trust it — suitable for test and internal use only", file);
+
+                X509Certificate2 cert;
+                byte[] pfx;
+                try
+                {
+                    (cert, pfx) = CertificateGenerator.Create(options);
+                }
+                catch (Exception ex) when (ex is CryptographicException or ArgumentException)
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "create-certificate: {0}", ex.Message);
+                    return;
+                }
+
+                using (cert)
+                {
+                    // Generated even under --dry-run so that variables downstream of this action
+                    // still resolve; only the write is skipped.
+                    if (DryRun)
+                        RLog.InfoFormat("[dry-run] Would create certificate: {0} (subject {1})", file, options.Subject);
+                    else
+                    {
+                        File.WriteAllBytes(file, pfx);
+                        RLog.InfoFormat("Created certificate {0} — {1}, expires {2}",
+                            file, cert.Subject, CertificateChecker.Format(cert.NotAfter.ToUniversalTime()));
+                    }
+
+                    // Read straight off the in-memory certificate rather than the file, so the
+                    // variables resolve identically under --dry-run where nothing was written.
+                    var prefix = GetAttribute(actionNode, "prefix", "CERT");
+                    exportCertificateVars(prefix, cert);
+                    addvar(prefix + "_FILE", file);
+                }
+            }
+            finally
+            {
+                issuer?.Dispose();
+            }
+        }
+
+        private bool TryResolveRequiredEkus(XElement actionNode, out string[] ekus)
+        {
+            ekus = Array.Empty<string>();
+
+            var purposeName = GetAttribute(actionNode, "purpose", "");
+            if (!string.IsNullOrEmpty(purposeName))
+            {
+                var purpose = CertificatePurpose.Resolve(purposeName);
+                if (purpose == null)
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "check-certificate: unknown purpose '{0}' (expected one of {1})",
+                        purposeName, string.Join(", ", CertificatePurpose.Names));
+                    return false;
+                }
+                ekus = purpose.Ekus.ToArray();
+            }
+
+            var ekuAttribute = GetAttribute(actionNode, "eku", "");
+            if (!string.IsNullOrEmpty(ekuAttribute))
+            {
+                if (!CertificatePurpose.TryParseEkuList(ekuAttribute, out var parsed, out var invalid))
+                {
+                    LogForNodeWithDetails(LogMessageLevel.Error, actionNode, "check-certificate: unknown eku '{0}'", invalid!);
+                    return false;
+                }
+                ekus = parsed;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Publishes a checked certificate's properties as ~PREFIX_*~ variables. Values are never
+        /// empty because VariableStore.Set logs an error for an empty value; booleans are 1/0 and
+        /// absent strings become "(none)".
+        /// </summary>
+        private void exportCertificateVars(string? prefix, CertificateCheckResult result)
+        {
+            prefix = string.IsNullOrEmpty(prefix) ? "CERT" : prefix;
+
+            if (string.IsNullOrEmpty(result.Thumbprint))
+            {
+                // The certificate could not be read at all — only the verdict is knowable.
+                addvar(prefix + "_VALID", "0");
+                return;
+            }
+
+            exportCertificateVars(prefix, result.Subject, result.Issuer, result.Thumbprint, result.SerialNumber,
+                result.NotBeforeUtc, result.NotAfterUtc, result.DaysRemaining, result.HasPrivateKey,
+                result.KeyAlgorithm, result.KeySize, result.Ekus, result.Ok);
+        }
+
+        /// <summary>Publishes a freshly generated certificate's properties, which is valid by construction.</summary>
+        private void exportCertificateVars(string? prefix, X509Certificate2 cert)
+        {
+            prefix = string.IsNullOrEmpty(prefix) ? "CERT" : prefix;
+
+            var notBefore = cert.NotBefore.ToUniversalTime();
+            var notAfter = cert.NotAfter.ToUniversalTime();
+            var (keyAlgorithm, keySize) = CertificateChecker.DescribeKey(cert);
+
+            exportCertificateVars(prefix, cert.Subject, cert.Issuer, cert.Thumbprint, cert.SerialNumber,
+                notBefore, notAfter, (int)Math.Floor((notAfter - DateTime.UtcNow).TotalDays), cert.HasPrivateKey,
+                keyAlgorithm, keySize, CertificateChecker.ReadEkus(cert).Oids, valid: true);
+        }
+
+        private void exportCertificateVars(string prefix, string subject, string issuer, string thumbprint,
+            string serial, DateTime notBeforeUtc, DateTime notAfterUtc, int daysRemaining, bool hasPrivateKey,
+            string keyAlgorithm, int keySize, IReadOnlyList<string> ekus, bool valid)
+        {
+            addvar(prefix + "_SUBJECT", NoneIfEmpty(subject));
+            addvar(prefix + "_ISSUER", NoneIfEmpty(issuer));
+            addvar(prefix + "_THUMBPRINT", NoneIfEmpty(thumbprint));
+            addvar(prefix + "_SERIAL", NoneIfEmpty(serial));
+            addvar(prefix + "_NOT_BEFORE", CertificateChecker.Format(notBeforeUtc));
+            addvar(prefix + "_NOT_AFTER", CertificateChecker.Format(notAfterUtc));
+            addvar(prefix + "_DAYS_REMAINING", daysRemaining.ToString());
+            addvar(prefix + "_HAS_PRIVATE_KEY", hasPrivateKey ? "1" : "0");
+            addvar(prefix + "_KEY_ALGORITHM", NoneIfEmpty(keyAlgorithm));
+            addvar(prefix + "_KEY_SIZE", keySize.ToString());
+            addvar(prefix + "_EKU", ekus.Count > 0 ? string.Join(",", ekus.Select(CertificatePurpose.DescribeEku)) : "(none)");
+            addvar(prefix + "_VALID", valid ? "1" : "0");
+        }
+
+        private static string NoneIfEmpty(string? value) => string.IsNullOrEmpty(value) ? "(none)" : value;
+        private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+
+        /// <summary>
+        /// A password attribute is a secret by definition, so it is registered for redaction
+        /// unconditionally — unlike &lt;Set&gt;, which requires secret="true".
+        /// </summary>
+        private string? ResolvePassword(XElement node, string attributeName)
+        {
+            var raw = GetAttribute(node, attributeName, "");
+            if (string.IsNullOrEmpty(raw))
+                return null;
+            var value = _transform.ExpandVars(raw)!;
+            RLog.RegisterSecret(value);
+            return value;
         }
 
         private string GetFilenameFromNode(string path, string? newPathAttribute, XElement actionNode)

@@ -1324,6 +1324,8 @@ These variables are automatically available:
 | `TargetVersion` | Version string for the active target (from `archive-version`) | `1.2.3` |
 | `GITVERSION.JSON` | Full GitVersion JSON | `{"SemVer":"1.2.3",...}` |
 
+Additionally, `<check-certificate>` and `<create-certificate>` publish `~CERT_*~` variables describing the certificate they handled — see [Certificate Variables](#certificate-variables).
+
 **GitVersion Variables:**
 
 ReleaseBuilder requires GitVersion.Tool to function.
@@ -1639,6 +1641,8 @@ Expansion is a single left-to-right pass over each string: a value substituted i
 ## Build Actions Reference
 
 Build actions are executed within `<build>` elements.
+
+Every build action accepts an optional `active` attribute, using the same `when,~VAR~,==,value` syntax as `<Artefacts active="...">`. When the expression evaluates to empty the action is skipped — the way to gate a single action on a platform or on the result of a preceding check.
 
 ### Action: clean
 
@@ -2072,6 +2076,389 @@ to specify which exit codes should be treated as success.
 - stdout and stderr are captured and logged at Debug level (visible with `-vv`)
 - Use the `--shell-exec` command-line option to run processes in a visible terminal window instead
 - Environment variables inherited from parent process
+
+---
+
+### Action: check-certificate
+
+Validates a PKCS#12 (`.pfx` / `.p12`) certificate before the rest of the build depends on it.
+
+**Syntax:**
+```xml
+<check-certificate file="signing/acme.pfx"
+                   password="$SIGNING_PFX_PASSWORD"
+                   min-days="30"
+                   purpose="code-signing"
+                   prefix="SIGNCERT">
+  <trust-root file="ca/acme-internal-root.cer" />
+</check-certificate>
+```
+
+**Attributes:**
+
+##### file (required)
+
+**Type:** String
+**Purpose:** Path to the certificate archive
+
+**Resolution:** Searches the action's folder, then the root directory, then the current directory.
+
+##### password (optional)
+
+**Type:** String
+**Default:** None
+**Purpose:** Passphrase for the archive
+
+Supports variable and `$ENV` expansion. Registered as a secret automatically, so it is redacted from all log output; `secret="true"` is not needed. Note that values shorter than 8 characters are not registered — see [Secret Redaction](#secret-redaction).
+
+##### min-days (optional)
+
+**Type:** Integer
+**Default:** `0`
+**Purpose:** Minimum days that must remain before expiry
+
+`0` checks only that the certificate has not already expired.
+
+##### private-key (optional)
+
+**Type:** Boolean
+**Default:** `true`
+**Purpose:** Require the archive to contain the private key
+
+##### purpose (optional)
+
+**Type:** `token-signing` | `code-signing` | `server-auth` | `client-auth` | `ca` | `none`
+**Default:** None
+**Purpose:** Shorthand for the `eku` requirement implied by that purpose
+
+##### eku (optional)
+
+**Type:** Comma-separated strings
+**Default:** None
+**Purpose:** Extended key usages the certificate must declare
+
+Accepts friendly names (`code-signing`, `server-auth`, `client-auth`, `email-protection`, `time-stamping`, `ocsp-signing`, `any`) or raw OIDs. Overrides `purpose`.
+
+##### key-algorithm (optional)
+
+**Type:** `rsa` | `ecdsa`
+**Default:** None
+**Purpose:** Require a particular public key algorithm
+
+##### min-key-size (optional)
+
+**Type:** Integer
+**Default:** `0`
+**Purpose:** Minimum key size in bits
+
+##### trusted (optional)
+
+**Type:** Boolean
+**Default:** `false`
+**Purpose:** Require the certificate to chain to a trusted root
+
+Uses the operating system's trust store unless `<trust-root>` children are supplied, in which case only those roots are trusted.
+
+##### revocation (optional)
+
+**Type:** Boolean
+**Default:** `false`
+**Purpose:** Check revocation online. Only meaningful with `trusted="true"`
+
+##### thumbprint (optional)
+
+**Type:** String
+**Default:** None
+**Purpose:** Expected SHA-1 thumbprint
+
+Separators (`:`, `-`, spaces) are ignored and matching is case-insensitive, so a thumbprint copied from any tool works unmodified.
+
+##### subject (optional)
+
+**Type:** String
+**Default:** None
+**Purpose:** Case-insensitive substring the subject distinguished name must contain
+
+##### prefix (optional)
+
+**Type:** String
+**Default:** `CERT`
+**Purpose:** Prefix for the exported variables
+
+##### on-fail (optional)
+
+**Type:** `error` | `warn`
+**Default:** `error`
+**Purpose:** Whether a failed check fails the build
+
+##### active (optional)
+
+**Type:** String
+**Default:** None
+**Purpose:** Condition expression using the same `when,~VAR~,==,value` syntax as `<Artefacts active="...">`
+
+**Child element: `<trust-root>`**
+
+Zero or more roots to build the chain against instead of the operating system's trust store — the way to validate against an internal CA without installing anything on the build machine.
+
+| Attribute | Required | Description |
+|-----------|----------|-------------|
+| `file` | Yes | DER or PEM `.cer`/`.crt`, or a `.pfx` |
+| `password` | No | Passphrase, if the file is a password-protected `.pfx` |
+
+**Examples:**
+
+**Example 1: Fail if the signing certificate expires within a month**
+```xml
+<check-certificate file="signing/acme.pfx" password="$SIGNING_PFX_PASSWORD" min-days="30" />
+```
+
+**Example 2: Check without failing, then sign only if it passed**
+```xml
+<check-certificate file="signing.pfx" password="$PW" on-fail="warn" prefix="SIGN" />
+<exec app="signtool" args="sign /f signing.pfx /p $PW /fd sha256 app.exe"
+      active="when,~SIGN_VALID~,==,1" />
+```
+
+**Example 3: Pin to a known certificate**
+```xml
+<check-certificate file="signing.pfx" password="$PW"
+                   thumbprint="A1:B2:C3:D4:E5:F6:07:18:29:3A:4B:5C:6D:7E:8F:90:A1:B2:C3:D4" />
+```
+
+**Example 4: Validate against an internal CA**
+```xml
+<check-certificate file="leaf.pfx" password="$PW" trusted="true">
+  <trust-root file="ca/internal-root.cer" />
+</check-certificate>
+```
+
+**Behavior:**
+- Every failed criterion is reported, not just the first
+- A certificate with **no** EKU extension satisfies any `eku`/`purpose` requirement, with a warning — per RFC 5280 an absent EKU means unconstrained, and Authenticode accepts it
+- All date comparisons are performed in UTC
+- Runs for real under `--dry-run`; it mutates nothing, and confirming the certificate is present and in date is the most useful check a dry run can make
+- A failure is reported with the config line and column, increments the error counter, and the build exits `2` (BuildError). `on-fail="warn"` logs at Warn instead and does not affect the exit code
+
+**Exported variables:** see [Certificate Variables](#certificate-variables).
+
+---
+
+### Action: create-certificate
+
+Generates a PKCS#12 certificate entirely in managed code — no `openssl`, no `New-SelfSignedCertificate`, no external tool of any kind, and identical behaviour on Windows, Linux and macOS.
+
+The common case is an OpenID token-signing certificate: ABP.IO and OpenIddict need an `authserver.pfx` that has no extended key usage, and for which self-signed is the correct answer.
+
+**Security note:** a self-signed certificate is trusted only by machines explicitly told to trust it. For `code-signing` and `server-auth` that makes it suitable for test and internal use only — a certificate for public distribution must come from a commercial CA, and ReleaseBuilder logs a warning saying so. For `token-signing` the opposite holds: the certificate is only ever validated by the issuer itself, so self-signed is correct and no warning is emitted.
+
+**Syntax:**
+```xml
+<create-certificate file="authserver.pfx"
+                    subject="CN=AuthServer"
+                    purpose="token-signing"
+                    password="$AUTH_PFX_PASSWORD"
+                    days="3650" />
+```
+
+**Attributes:**
+
+##### file (required)
+
+**Type:** String
+**Purpose:** Output path for the `.pfx`
+
+The file need not exist; the directory must.
+
+##### subject (required)
+
+**Type:** String
+**Purpose:** X.500 distinguished name, e.g. `CN=AuthServer, O=Acme Ltd, C=GB`
+
+##### password (optional)
+
+**Type:** String
+**Default:** None
+**Purpose:** Passphrase to protect the archive
+
+Registered as a secret automatically.
+
+##### days (optional)
+
+**Type:** Integer
+**Default:** `730`
+**Purpose:** Validity period in days from `not-before`
+
+##### not-before (optional)
+
+**Type:** ISO-8601 date/time
+**Default:** Five minutes ago
+**Purpose:** Start of the validity window
+
+The small backdate absorbs clock skew between the build machine and whatever validates the certificate.
+
+##### purpose (optional)
+
+**Type:** `token-signing` | `code-signing` | `server-auth` | `client-auth` | `ca` | `none`
+**Default:** `token-signing`
+**Purpose:** Preset for extended key usage, key usage and basic constraints
+
+| `purpose` | Extended key usage | Key usage | CA | Self-signed warning |
+|-----------|--------------------|-----------|----|---------------------|
+| `token-signing` | *(none)* | digitalSignature, keyEncipherment | No | No |
+| `code-signing` | `1.3.6.1.5.5.7.3.3` | digitalSignature | No | Yes |
+| `server-auth` | `1.3.6.1.5.5.7.3.1` | digitalSignature, keyEncipherment | No | Yes |
+| `client-auth` | `1.3.6.1.5.5.7.3.2` | digitalSignature, keyEncipherment | No | No |
+| `ca` | *(none)* | keyCertSign, cRLSign | Yes | No |
+| `none` | *(none)* | digitalSignature | No | No |
+
+##### eku (optional)
+
+**Type:** Comma-separated strings
+**Default:** From `purpose`
+**Purpose:** Extended key usages to write
+
+Friendly names or raw OIDs; anything containing a dot is treated as an OID. `none` writes no EKU extension at all, which per RFC 5280 leaves the certificate unconstrained.
+
+##### key-usage (optional)
+
+**Type:** Comma-separated strings
+**Default:** From `purpose`
+**Purpose:** Key usage flags
+
+Accepts `digital-signature`, `non-repudiation`, `key-encipherment`, `data-encipherment`, `key-agreement`, `key-cert-sign`, `crl-sign`, `encipher-only`, `decipher-only`, `none`.
+
+##### key (optional)
+
+**Type:** `rsa` | `ecdsa`
+**Default:** `rsa`
+**Purpose:** Key algorithm
+
+`signtool` and Authenticode support for ECDSA signing certificates is patchy; RSA is the tested path for code signing.
+
+##### key-size (optional)
+
+**Type:** Integer
+**Default:** `3072` for RSA, `256` for ECDSA
+**Purpose:** Key size in bits
+
+RSA accepts 2048, 3072 or 4096. ECDSA accepts 256 (nistP256), 384 (nistP384) or 521 (nistP521).
+
+##### hash (optional)
+
+**Type:** `sha256` | `sha384` | `sha512`
+**Default:** `sha256`
+**Purpose:** Signature hash algorithm
+
+##### dns-names (optional)
+
+**Type:** Comma-separated strings
+**Default:** None
+**Purpose:** Subject alternative names (dNSName entries)
+
+##### issuer-file (optional)
+
+**Type:** String
+**Default:** None
+**Purpose:** A CA `.pfx` to sign the new certificate with
+
+Omit for a self-signed certificate. The issuer must contain a private key.
+
+##### issuer-password (optional)
+
+**Type:** String
+**Default:** None
+**Purpose:** Passphrase for `issuer-file`. Registered as a secret
+
+##### overwrite (optional)
+
+**Type:** Boolean
+**Default:** `false`
+**Purpose:** Whether an existing file may be replaced
+
+Defaults to refusing, so a config cannot silently regenerate a signing identity on every build.
+
+##### prefix (optional)
+
+**Type:** String
+**Default:** `CERT`
+**Purpose:** Prefix for the exported variables
+
+##### active (optional)
+
+**Type:** String
+**Default:** None
+**Purpose:** Condition expression using the same `when,~VAR~,==,value` syntax as `<Artefacts active="...">`
+
+**Examples:**
+
+**Example 1: ABP.IO / OpenIddict authserver.pfx**
+```xml
+<create-certificate file="src/Acme.AuthServer/authserver.pfx"
+                    subject="CN=AuthServer"
+                    password="$AUTH_PFX_PASSWORD"
+                    days="3650" />
+```
+
+**Example 2: Throwaway code-signing certificate for a test build**
+```xml
+<create-certificate file="build/test-signing.pfx"
+                    subject="CN=Acme Test Signing, O=Acme Ltd, C=GB"
+                    purpose="code-signing"
+                    password="$TEST_PFX_PASSWORD"
+                    days="90"
+                    overwrite="true" />
+```
+
+**Example 3: Internal CA and a leaf signed by it**
+```xml
+<create-certificate file="ca/internal-root.pfx" subject="CN=Acme Internal Root"
+                    purpose="ca" days="3650" password="$CA_PASSWORD" />
+<create-certificate file="build/service.pfx" subject="CN=service.internal"
+                    purpose="server-auth" dns-names="service.internal,service"
+                    issuer-file="ca/internal-root.pfx" issuer-password="$CA_PASSWORD" />
+```
+
+**Example 4: A purpose the presets do not cover**
+```xml
+<create-certificate file="ts.pfx" subject="CN=Timestamp"
+                    eku="time-stamping,1.3.6.1.5.5.7.3.9"
+                    key-usage="digital-signature" key="ecdsa" key-size="384" />
+```
+
+**Behavior:**
+- Under `--dry-run` the certificate is generated in memory and the variables are published, but nothing is written — so a later `~CERT_THUMBPRINT~` reference still resolves during a dry run
+- A leaf signed with `issuer-file` receives an authority key identifier and a random 128-bit serial number
+- Generated PKCS#12 archives use the legacy password-based encryption that every version of `signtool` and `certutil` accepts
+
+**What this action does not do:** it creates certificates, it does not use them. Authenticode signing of an executable or MSI, RFC-3161 timestamping, enrolment against an external CA, and installing a root into the operating system's trust store all still require `signtool`, `osslsigncode` or `certutil` via `<exec>`.
+
+**Exported variables:** see [Certificate Variables](#certificate-variables).
+
+<a id="certificate-variables"></a>
+### Certificate Variables
+
+Both certificate actions publish the certificate's properties as variables, named with the action's `prefix` (default `CERT`):
+
+| Variable | Description |
+|----------|-------------|
+| `~PREFIX_SUBJECT~` | Subject distinguished name |
+| `~PREFIX_ISSUER~` | Issuer distinguished name |
+| `~PREFIX_THUMBPRINT~` | SHA-1 thumbprint, uppercase hex, no separators |
+| `~PREFIX_SERIAL~` | Serial number |
+| `~PREFIX_NOT_BEFORE~` | Start of validity, `yyyy-MM-ddTHH:mm:ssZ` |
+| `~PREFIX_NOT_AFTER~` | End of validity, `yyyy-MM-ddTHH:mm:ssZ` |
+| `~PREFIX_DAYS_REMAINING~` | Days until expiry; negative if already expired |
+| `~PREFIX_HAS_PRIVATE_KEY~` | `1` or `0` |
+| `~PREFIX_KEY_ALGORITHM~` | `rsa` or `ecdsa` |
+| `~PREFIX_KEY_SIZE~` | Key size in bits |
+| `~PREFIX_EKU~` | Comma-separated extended key usages, or `(none)` |
+| `~PREFIX_VALID~` | `1` if every check passed, `0` otherwise |
+| `~PREFIX_FILE~` | Output path (`create-certificate` only) |
+
+Values are never empty — booleans are `1`/`0` and absent strings become `(none)` — because an empty variable value is itself reported as an error.
+
+If a `<check-certificate>` cannot read the file at all, only `~PREFIX_VALID~` is set (to `0`); the remaining variables are left undefined, and referencing one is an error.
 
 ---
 
@@ -2638,6 +3025,8 @@ Removes leading path components from output.
 | 4 | `InvalidArguments` | Unrecognised command-line arguments |
 
 ReleaseBuilder uses continue-and-report mode: it logs all errors and returns a non-zero exit code at the end, rather than stopping at the first error. This lets you see all problems in one run.
+
+A failed `<check-certificate>` is a build failure like any other and returns `2`; there is no distinct exit code for it. Use `on-fail="warn"` and `~PREFIX_VALID~` if the build should carry on and decide for itself.
 
 **Viewing Errors:**
 Use `-v` or `-vv` for detailed error information:

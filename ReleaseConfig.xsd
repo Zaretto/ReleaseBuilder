@@ -59,6 +59,7 @@
                             <xs:attribute name="folder" type="xs:string" use="required" />
                             <xs:attribute name="include-folders" type="xs:boolean" use="optional" />
                             <xs:attribute name="match" type="xs:string" use="optional" />
+                            <xs:attribute name="active" type="xs:string" use="optional" />
                           </xs:complexType>
                         </xs:element>
                         <xs:element name="copy" minOccurs="0" maxOccurs="unbounded">
@@ -76,6 +77,7 @@
                             <xs:attribute name="name" type="xs:string" use="optional" />
                             <xs:attribute name="recursive" type="xs:boolean" use="optional" />
                             <xs:attribute name="transform" type="xs:string" use="optional" />
+                            <xs:attribute name="active" type="xs:string" use="optional" />
                           </xs:complexType>
                         </xs:element>
                         <xs:element name="modify" minOccurs="0" maxOccurs="unbounded">
@@ -88,20 +90,30 @@
                               </xs:element>
                             </xs:sequence>
                             <xs:attribute name="file" type="xs:string" use="required" />
+                            <xs:attribute name="active" type="xs:string" use="optional" />
                           </xs:complexType>
                         </xs:element>
                         <xs:element minOccurs="0" maxOccurs="unbounded" name="xml-edit">
                           <xs:complexType>
                             <xs:sequence>
-                              <xs:element minOccurs="0" maxOccurs="unbounded" name="node">
-                                <xs:complexType>
-                                  <xs:attribute name="path" type="xs:string" use="optional" />
-                                  <xs:attribute name="action" type="xs:string" use="optional" />
-                                </xs:complexType>
-                              </xs:element>
+                              <xs:choice minOccurs="0" maxOccurs="unbounded">
+                                <xs:element name="node">
+                                  <xs:complexType>
+                                    <xs:attribute name="path" type="xs:string" use="optional" />
+                                    <xs:attribute name="action" type="xs:string" use="optional" />
+                                  </xs:complexType>
+                                </xs:element>
+                                <xs:element name="attribute">
+                                  <xs:complexType>
+                                    <xs:attribute name="path" type="xs:string" use="optional" />
+                                    <xs:attribute name="action" type="xs:string" use="optional" />
+                                  </xs:complexType>
+                                </xs:element>
+                              </xs:choice>
                             </xs:sequence>
                             <xs:attribute name="file" type="xs:string" use="optional" />
                             <xs:attribute name="omit-declaration" type="xs:boolean" use="optional" />
+                            <xs:attribute name="active" type="xs:string" use="optional" />
                           </xs:complexType>
                         </xs:element>
                         <xs:element name="exec" minOccurs="0" maxOccurs="unbounded">
@@ -110,6 +122,70 @@
                             <xs:attribute name="args" type="xs:string" use="optional" />
                             <xs:attribute name="folder" type="xs:string" use="optional" />
                             <xs:attribute name="required-exit-codes" type="xs:string" use="optional" />
+                            <xs:attribute name="active" type="xs:string" use="optional" />
+                          </xs:complexType>
+                        </xs:element>
+                        <xs:element name="check-certificate" minOccurs="0" maxOccurs="unbounded">
+                          <xs:complexType>
+                            <xs:sequence>
+                              <xs:element name="trust-root" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                  <xs:attribute name="file" type="xs:string" use="required" />
+                                  <xs:attribute name="password" type="xs:string" use="optional" />
+                                </xs:complexType>
+                              </xs:element>
+                            </xs:sequence>
+                            <xs:attribute name="file" type="xs:string" use="required" />
+                            <xs:attribute name="password" type="xs:string" use="optional" />
+                            <xs:attribute name="min-days" type="xs:int" use="optional" />
+                            <xs:attribute name="private-key" type="xs:boolean" use="optional" />
+                            <xs:attribute name="purpose" type="certificate-purpose" use="optional" />
+                            <xs:attribute name="eku" type="xs:string" use="optional" />
+                            <xs:attribute name="key-algorithm" type="certificate-key" use="optional" />
+                            <xs:attribute name="min-key-size" type="xs:int" use="optional" />
+                            <xs:attribute name="trusted" type="xs:boolean" use="optional" />
+                            <xs:attribute name="revocation" type="xs:boolean" use="optional" />
+                            <xs:attribute name="thumbprint" type="xs:string" use="optional" />
+                            <xs:attribute name="subject" type="xs:string" use="optional" />
+                            <xs:attribute name="prefix" type="xs:string" use="optional" />
+                            <xs:attribute name="on-fail" use="optional">
+                              <xs:simpleType>
+                                <xs:restriction base="xs:string">
+                                  <xs:enumeration value="error"/>
+                                  <xs:enumeration value="warn"/>
+                                </xs:restriction>
+                              </xs:simpleType>
+                            </xs:attribute>
+                            <xs:attribute name="active" type="xs:string" use="optional" />
+                          </xs:complexType>
+                        </xs:element>
+                        <xs:element name="create-certificate" minOccurs="0" maxOccurs="unbounded">
+                          <xs:complexType>
+                            <xs:attribute name="file" type="xs:string" use="required" />
+                            <xs:attribute name="subject" type="xs:string" use="required" />
+                            <xs:attribute name="password" type="xs:string" use="optional" />
+                            <xs:attribute name="days" type="xs:int" use="optional" />
+                            <xs:attribute name="not-before" type="xs:string" use="optional" />
+                            <xs:attribute name="purpose" type="certificate-purpose" use="optional" />
+                            <xs:attribute name="eku" type="xs:string" use="optional" />
+                            <xs:attribute name="key-usage" type="xs:string" use="optional" />
+                            <xs:attribute name="key" type="certificate-key" use="optional" />
+                            <xs:attribute name="key-size" type="xs:int" use="optional" />
+                            <xs:attribute name="hash" use="optional">
+                              <xs:simpleType>
+                                <xs:restriction base="xs:string">
+                                  <xs:enumeration value="sha256"/>
+                                  <xs:enumeration value="sha384"/>
+                                  <xs:enumeration value="sha512"/>
+                                </xs:restriction>
+                              </xs:simpleType>
+                            </xs:attribute>
+                            <xs:attribute name="dns-names" type="xs:string" use="optional" />
+                            <xs:attribute name="issuer-file" type="xs:string" use="optional" />
+                            <xs:attribute name="issuer-password" type="xs:string" use="optional" />
+                            <xs:attribute name="overwrite" type="xs:boolean" use="optional" />
+                            <xs:attribute name="prefix" type="xs:string" use="optional" />
+                            <xs:attribute name="active" type="xs:string" use="optional" />
                           </xs:complexType>
                         </xs:element>
                         <xs:element name="create" nillable="true" minOccurs="0" maxOccurs="unbounded">
@@ -117,6 +193,7 @@
                             <xs:simpleContent>
                               <xs:extension base="xs:string">
                                 <xs:attribute name="file" type="xs:string" use="required" />
+                                <xs:attribute name="active" type="xs:string" use="optional" />
                               </xs:extension>
                             </xs:simpleContent>
                           </xs:complexType>
@@ -138,6 +215,7 @@
                             <xs:attribute name="process" type="xs:boolean" use="optional" />
                             <xs:attribute name="file" type="xs:string" use="optional" />
                             <xs:attribute name="nobuild" type="xs:boolean" use="optional" />
+                            <xs:attribute name="active" type="xs:string" use="optional" />
                           </xs:complexType>
                         </xs:element>
                       </xs:choice>
@@ -195,4 +273,20 @@
       </xs:sequence>
     </xs:complexType>
   </xs:element>
+  <xs:simpleType name="certificate-purpose">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="token-signing"/>
+      <xs:enumeration value="code-signing"/>
+      <xs:enumeration value="server-auth"/>
+      <xs:enumeration value="client-auth"/>
+      <xs:enumeration value="ca"/>
+      <xs:enumeration value="none"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="certificate-key">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="rsa"/>
+      <xs:enumeration value="ecdsa"/>
+    </xs:restriction>
+  </xs:simpleType>
 </xs:schema>

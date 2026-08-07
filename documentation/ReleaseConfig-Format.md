@@ -89,6 +89,8 @@ A `<Set>` marked `secret="true"` registers its value with the logger, which then
 [ INFO] [dry-run] Would exec: dotnet nuget push --api-key ***
 ```
 
+The `password` and `issuer-password` attributes of `<check-certificate>` and `<create-certificate>` are registered automatically — a password is a secret by definition, so `secret="true"` is neither needed nor available there.
+
 - Matching is by value, not by variable name, so a secret is hidden everywhere it appears.
 - Values shorter than 8 characters are not registered, to avoid blanking unrelated text.
 - `random-key` output is registered automatically; `secret="true"` is not needed for it.
@@ -829,6 +831,12 @@ release-builder -c ReleaseConfigDevkit.xml -t x64
 
 Build actions are executed within `<build>` elements inside `<Artefacts>`.
 
+Every build action accepts an optional `active` attribute using the same `when,~VAR~,==,value` syntax as `<Artefacts active="...">`. When the expression evaluates to empty the action is skipped, which is how a single action is gated on a platform or a preceding check:
+
+```xml
+<exec app="signtool" args="sign /f cert.pfx app.exe" active="when,~OS~,==,windows" />
+```
+
 ### clean
 
 Removes files from a directory.
@@ -1104,6 +1112,192 @@ Process output (stdout and stderr) is captured and logged at Debug level. Use `-
 **Exit code interaction:**
 
 When an `<exec>` command returns a code not in `required-exit-codes`, the error is logged via `RLog.ErrorFormat` and increments the error counter. ReleaseBuilder continues processing subsequent actions (continue-and-report mode) and the overall exit code will be `2` (BuildError). Use `required-exit-codes` to allow non-zero success codes from tools like robocopy that use exit codes for status rather than errors.
+
+---
+
+### check-certificate
+
+Validates a PKCS#12 (`.pfx` / `.p12`) certificate before the build depends on it. Without this, a certificate that has expired or whose password is wrong is only discovered when the signing step runs — after the build has already taken its time, or worse, after it has produced an unsigned artefact nobody notices.
+
+**Syntax:**
+```xml
+<check-certificate file="signing/acme.pfx"
+                   password="$SIGNING_PFX_PASSWORD"
+                   min-days="30"
+                   purpose="code-signing"
+                   prefix="SIGNCERT">
+  <trust-root file="ca/acme-internal-root.cer" />
+</check-certificate>
+```
+
+**Attributes:**
+
+| Attribute | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `file` | Yes | - | Path to the `.pfx`/`.p12`. Resolved against the action folder, then the root, then the current directory |
+| `password` | No | none | Passphrase. Expanded, and registered as a secret automatically |
+| `min-days` | No | `0` | Minimum days remaining before expiry. `0` checks only that it has not already expired |
+| `private-key` | No | `true` | Require the archive to contain the private key |
+| `purpose` | No | - | Shorthand for `eku`. See [Certificate purposes](#certificate-purposes) |
+| `eku` | No | - | Required extended key usages — comma-separated friendly names or raw OIDs |
+| `key-algorithm` | No | - | Require `rsa` or `ecdsa` |
+| `min-key-size` | No | `0` | Minimum key size in bits |
+| `trusted` | No | `false` | Require the certificate to chain to a trusted root |
+| `revocation` | No | `false` | Check revocation online. Only meaningful with `trusted="true"` |
+| `thumbprint` | No | - | Expected SHA-1 thumbprint. `:`, `-` and spaces are ignored, case-insensitive |
+| `subject` | No | - | Case-insensitive substring the subject DN must contain |
+| `prefix` | No | `CERT` | Prefix for the exported variables |
+| `on-fail` | No | `error` | `error` fails the build; `warn` logs and continues |
+| `active` | No | - | Standard `when,...` guard |
+
+**Child element `<trust-root>`:** zero or more roots to build the chain against, used instead of the operating system's trust store. Takes `file` (DER or PEM `.cer`/`.crt`, or a `.pfx`) and an optional `password`. This is how an internal CA is validated without installing anything on the build machine.
+
+**Examples:**
+```xml
+<!-- Fail the build if the signing certificate expires within a month -->
+<check-certificate file="signing/acme.pfx" password="$SIGNING_PFX_PASSWORD" min-days="30" />
+
+<!-- Check without failing, then sign only if it passed -->
+<check-certificate file="signing.pfx" password="$PW" on-fail="warn" prefix="SIGN" />
+<exec app="signtool" args="sign /f signing.pfx /p $PW /fd sha256 app.exe"
+      active="when,~SIGN_VALID~,==,1" />
+
+<!-- Pin to a known certificate -->
+<check-certificate file="signing.pfx" password="$PW"
+                   thumbprint="A1:B2:C3:D4:E5:F6:07:18:29:3A:4B:5C:6D:7E:8F:90:A1:B2:C3:D4" />
+
+<!-- Validate against an internal CA without installing it -->
+<check-certificate file="leaf.pfx" password="$PW" trusted="true">
+  <trust-root file="ca/internal-root.cer" />
+</check-certificate>
+```
+
+**Behavior:**
+- Every failed criterion is reported, not just the first, so one run tells you everything that is wrong.
+- A certificate with **no** EKU extension satisfies any `eku`/`purpose` requirement, with a warning. Per RFC 5280 an absent EKU means the certificate is unconstrained, and Authenticode accepts it; failing it would reject certificates that sign perfectly well.
+- Runs for real under `--dry-run`. It changes nothing, and verifying the certificate is present and in date is the most useful thing a dry run can do.
+- All date comparisons are in UTC.
+
+**Exit code interaction:**
+
+A failure is logged via `LogForNodeWithDetails` with the config line and column, increments the error counter, and the build exits `2` (BuildError). `on-fail="warn"` logs at Warn instead and does not affect the exit code — `~PREFIX_VALID~` still reports the verdict.
+
+---
+
+### create-certificate
+
+Generates a PKCS#12 certificate entirely in managed code. No `openssl`, no `New-SelfSignedCertificate`, no external tool of any kind, and identical behaviour on Windows, Linux and macOS.
+
+The common case is an OpenID token-signing certificate — ABP.IO and OpenIddict need an `authserver.pfx` that has no extended key usage and for which self-signed is the correct answer.
+
+**Syntax:**
+```xml
+<create-certificate file="authserver.pfx"
+                    subject="CN=AuthServer"
+                    purpose="token-signing"
+                    password="$AUTH_PFX_PASSWORD"
+                    days="3650" />
+```
+
+**Attributes:**
+
+| Attribute | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `file` | Yes | - | Output path. Need not exist |
+| `subject` | Yes | - | X.500 distinguished name, e.g. `CN=AuthServer, O=Acme Ltd, C=GB` |
+| `password` | No | none | Passphrase. Expanded, and registered as a secret automatically |
+| `days` | No | `730` | Validity period from `not-before` |
+| `not-before` | No | now − 5 min | ISO-8601 start of the validity window |
+| `purpose` | No | `token-signing` | Preset for EKU, key usage and basic constraints. See [Certificate purposes](#certificate-purposes) |
+| `eku` | No | *from purpose* | Overrides the preset's EKU list. `none` writes no EKU extension |
+| `key-usage` | No | *from purpose* | Overrides the preset's key usage |
+| `key` | No | `rsa` | `rsa` or `ecdsa` |
+| `key-size` | No | `3072` / `256` | RSA: 2048, 3072 or 4096. ECDSA: 256, 384 or 521 |
+| `hash` | No | `sha256` | `sha256`, `sha384` or `sha512` |
+| `dns-names` | No | - | Comma-separated subject alternative names |
+| `issuer-file` | No | - | A CA `.pfx` to sign with. Omit for self-signed |
+| `issuer-password` | No | - | Passphrase for `issuer-file`. Registered as a secret |
+| `overwrite` | No | `false` | Refuse to replace an existing file unless `true` |
+| `prefix` | No | `CERT` | Prefix for the exported variables |
+| `active` | No | - | Standard `when,...` guard |
+
+<a id="certificate-purposes"></a>
+**Certificate purposes:**
+
+| `purpose` | Extended key usage | Key usage | CA | Self-signed warning |
+|-----------|--------------------|-----------|----|---------------------|
+| `token-signing` *(default)* | *(none)* | digitalSignature, keyEncipherment | No | No |
+| `code-signing` | `1.3.6.1.5.5.7.3.3` | digitalSignature | No | Yes |
+| `server-auth` | `1.3.6.1.5.5.7.3.1` | digitalSignature, keyEncipherment | No | Yes |
+| `client-auth` | `1.3.6.1.5.5.7.3.2` | digitalSignature, keyEncipherment | No | No |
+| `ca` | *(none)* | keyCertSign, cRLSign | Yes | No |
+| `none` | *(none)* | digitalSignature | No | No |
+
+Friendly EKU names accepted by `eku`: `code-signing`, `server-auth`, `client-auth`, `email-protection`, `time-stamping`, `ocsp-signing`, `any`, and `none`. Anything containing a dot is treated as a raw OID, so unlisted purposes remain expressible.
+
+Key usage names accepted by `key-usage`: `digital-signature`, `non-repudiation`, `key-encipherment`, `data-encipherment`, `key-agreement`, `key-cert-sign`, `crl-sign`, `encipher-only`, `decipher-only`, `none`.
+
+> **Warning:** a self-signed certificate is not trusted by anything that has not been explicitly told to trust it. For `code-signing` and `server-auth` that makes it suitable for test and internal use only — a certificate for public distribution has to come from a commercial CA, and ReleaseBuilder emits a warning to that effect. For `token-signing` the opposite is true: an OpenID token-signing certificate is only ever validated by the issuer itself, so self-signed is the normal and correct choice and no warning is emitted.
+
+**Examples:**
+```xml
+<!-- ABP.IO / OpenIddict authserver.pfx -->
+<create-certificate file="src/Acme.AuthServer/authserver.pfx"
+                    subject="CN=AuthServer"
+                    password="$AUTH_PFX_PASSWORD"
+                    days="3650" />
+
+<!-- Throwaway code-signing certificate for a test build -->
+<create-certificate file="build/test-signing.pfx"
+                    subject="CN=Acme Test Signing, O=Acme Ltd, C=GB"
+                    purpose="code-signing"
+                    password="$TEST_PFX_PASSWORD"
+                    days="90"
+                    overwrite="true" />
+
+<!-- Internal CA and a leaf signed by it -->
+<create-certificate file="ca/internal-root.pfx" subject="CN=Acme Internal Root"
+                    purpose="ca" days="3650" password="$CA_PASSWORD" />
+<create-certificate file="build/service.pfx" subject="CN=service.internal"
+                    purpose="server-auth" dns-names="service.internal,service"
+                    issuer-file="ca/internal-root.pfx" issuer-password="$CA_PASSWORD" />
+
+<!-- Anything the presets do not cover -->
+<create-certificate file="ts.pfx" subject="CN=Timestamp"
+                    eku="time-stamping,1.3.6.1.5.5.7.3.9"
+                    key-usage="digital-signature" key="ecdsa" key-size="384" />
+```
+
+**Behavior:**
+- Under `--dry-run` the certificate is generated in memory and the variables are published, but nothing is written. This keeps a later `~CERT_THUMBPRINT~` reference resolvable during a dry run.
+- `overwrite="false"` (the default) means a config cannot silently regenerate a signing identity on every build.
+- A leaf signed with `issuer-file` gets an authority key identifier and a random 128-bit serial.
+
+**What still needs `<exec>`:** this action creates certificates, it does not use them. Authenticode signing of an executable or MSI, RFC-3161 timestamping, enrolment against an external CA, and installing a root into the operating system's trust store all still require `signtool`, `osslsigncode` or `certutil` via `<exec>`.
+
+---
+
+### Certificate variables
+
+Both certificate actions publish the certificate's properties as variables, using `prefix` (default `CERT`):
+
+| Variable | Description |
+|----------|-------------|
+| `~PREFIX_SUBJECT~` | Subject distinguished name |
+| `~PREFIX_ISSUER~` | Issuer distinguished name |
+| `~PREFIX_THUMBPRINT~` | SHA-1 thumbprint, uppercase hex |
+| `~PREFIX_SERIAL~` | Serial number |
+| `~PREFIX_NOT_BEFORE~` | Start of validity, `yyyy-MM-ddTHH:mm:ssZ` |
+| `~PREFIX_NOT_AFTER~` | End of validity, `yyyy-MM-ddTHH:mm:ssZ` |
+| `~PREFIX_DAYS_REMAINING~` | Days until expiry; negative if already expired |
+| `~PREFIX_HAS_PRIVATE_KEY~` | `1` or `0` |
+| `~PREFIX_KEY_ALGORITHM~` | `rsa` or `ecdsa` |
+| `~PREFIX_KEY_SIZE~` | Key size in bits |
+| `~PREFIX_EKU~` | Comma-separated extended key usages, or `(none)` |
+| `~PREFIX_VALID~` | `1` if every check passed, `0` otherwise |
+| `~PREFIX_FILE~` | Output path (`create-certificate` only) |
+
+Values are never empty — booleans are `1`/`0` and absent strings become `(none)` — because an empty variable value is itself reported as an error.
 
 ---
 

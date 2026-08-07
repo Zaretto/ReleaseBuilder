@@ -35,7 +35,7 @@ A comprehensive reference manual covering every command-line option, configurati
 - Complete command-line reference with all options
 - Configuration file structure and elements
 - Variable system (built-in, user-defined, environment)
-- Build actions reference (clean, copy, exec, create, xml-edit)
+- Build actions reference (clean, copy, exec, create, xml-edit, check-certificate, create-certificate)
 - Transform functions (set, replace, regex-replace, getversion, random-key, when)
 - Path resolution rules
 - Exit codes and error handling
@@ -89,6 +89,8 @@ Detailed documentation of the ReleaseConfig.xml format with extensive examples.
 | Transform file contents | [Format Reference: copy with transform](ReleaseConfig-Format.md#copy) |
 | Edit XML files | [User Reference: xml-edit action](User-Reference.md#action-xml-edit) |
 | Generate a secret key | [User Guide: Generating Secrets at Build Time](User-Guide.md#generating-secrets-at-build-time) |
+| Check a signing certificate is valid | [User Guide: Task 8](User-Guide.md#task-8-check-the-signing-certificate-before-building) |
+| Create a token-signing or test certificate | [User Guide: Generating a Token-Signing Certificate](User-Guide.md#generating-a-token-signing-certificate) |
 | Troubleshoot errors | [User Guide: Troubleshooting](User-Guide.md#troubleshooting) |
 
 ### By Role

@@ -14,6 +14,8 @@ A cross-platform .NET 8.0 build automation tool that uses XML configuration file
   - Directory cleaning
   - External process execution
   - Archive creation (ZIP)
+  - Certificate validation (expiry, private key, extended key usage, thumbprint, chain trust)
+  - Certificate generation in managed code — no OpenSSL or PowerShell — for OpenID token-signing and test/internal signing certificates
 - **Modular Builds**: Selective module building with `--module` flag
 - **Variable Substitution**: Dynamic variable expansion in configuration files
 - **Build-Time Secrets**: `random-key` transform generates cryptographically random keys of any length; `<Set secret="true">` keeps values out of the build log (and masks them in GitHub Actions)

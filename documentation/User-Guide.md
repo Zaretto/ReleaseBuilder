@@ -607,6 +607,47 @@ This approach works well when:
 
 ---
 
+### Task 8: Check the Signing Certificate Before Building
+
+A code-signing certificate that has expired, or whose password has been rotated, is normally
+discovered at the signing step — after the build has already taken twenty minutes, or worse,
+after it has quietly produced an unsigned package. Put the check first and the build fails in
+a second with a message that says what is wrong:
+
+```xml
+<Artefacts>
+  <build>
+    <!-- Fails the build if the certificate is missing, expired, has the wrong
+         password, or expires within the next 30 days -->
+    <check-certificate file="signing/acme.pfx"
+                       password="$SIGNING_PFX_PASSWORD"
+                       min-days="30" />
+
+    <exec app="dotnet" args="publish -c Release -o publish" />
+    <exec app="signtool"
+          args="sign /f signing/acme.pfx /p $SIGNING_PFX_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 publish/Acme.exe" />
+  </build>
+  <folder>publish</folder>
+</Artefacts>
+```
+
+The password is registered as a secret automatically, so it never appears in the log.
+
+To warn rather than fail — useful when signing is optional on developer machines — use
+`on-fail="warn"` and gate the signing step on the result:
+
+```xml
+<check-certificate file="signing/acme.pfx" password="$SIGNING_PFX_PASSWORD"
+                   on-fail="warn" prefix="SIGN" />
+
+<exec app="signtool" args="sign /f signing/acme.pfx /p $SIGNING_PFX_PASSWORD /fd sha256 publish/Acme.exe"
+      active="when,~SIGN_VALID~,==,1" />
+```
+
+Full attribute list: [check-certificate](User-Reference.md#action-check-certificate).
+
+---
+
 ## Tutorials
 
 ### Tutorial 1: Building a .NET Web Application
@@ -1326,6 +1367,71 @@ if it is needed in more than one place. Generated keys are kept out of the log a
 Keys generated this way are only as private as the package that contains them; keep
 long-lived secrets in environment variables instead
 (see [Keep Secrets in Environment Variables](#7-keep-secrets-in-environment-variables)).
+
+### Generating a Token-Signing Certificate
+
+An OpenID authorisation server needs a certificate to sign and encrypt the tokens it issues.
+ABP.IO and OpenIddict call it `authserver.pfx`. It is validated only by the issuer itself, so
+a self-signed certificate is the correct answer — there is nothing for a public CA to add.
+
+Producing one has historically meant `openssl` on Linux and macOS and
+`New-SelfSignedCertificate` on Windows. `<create-certificate>` does it in managed code, the
+same way on every platform:
+
+```xml
+<Artefacts>
+  <build>
+    <create-certificate file="src/Acme.AuthServer/authserver.pfx"
+                        subject="CN=AuthServer"
+                        password="$AUTH_PFX_PASSWORD"
+                        days="3650" />
+  </build>
+</Artefacts>
+```
+
+The default `purpose="token-signing"` writes no extended key usage — per RFC 5280 that leaves
+the certificate unconstrained, which is what OpenIddict expects — and sets key usage to
+`digitalSignature, keyEncipherment` so the same certificate can both sign and encrypt tokens.
+
+`overwrite` defaults to `false`, so the action will not silently mint a new signing identity
+on every build and invalidate every token already in circulation. Generate once, commit the
+password to your secret store, and let subsequent builds fail loudly if the file is missing.
+
+#### Generating a Test Code-Signing Certificate
+
+The same action produces a throwaway code-signing certificate for test builds:
+
+```xml
+<create-certificate file="build/test-signing.pfx"
+                    subject="CN=Acme Test Signing, O=Acme Ltd, C=GB"
+                    purpose="code-signing"
+                    password="$TEST_PFX_PASSWORD"
+                    days="90"
+                    overwrite="true" />
+```
+
+**This certificate is not trusted by anyone.** Windows will still refuse to run the signed
+binary without a SmartScreen warning, because nothing in the world's trust stores vouches for
+it. It is useful for exercising a signing pipeline, and for internal distribution where you
+control the machines; a release for public distribution needs a certificate from a commercial
+CA. ReleaseBuilder logs a warning to this effect whenever it generates a self-signed
+code-signing or server-auth certificate.
+
+For an internal chain, generate a CA and sign leaves with it:
+
+```xml
+<create-certificate file="ca/internal-root.pfx" subject="CN=Acme Internal Root"
+                    purpose="ca" days="3650" password="$CA_PASSWORD" />
+<create-certificate file="build/service.pfx" subject="CN=service.internal"
+                    purpose="server-auth" dns-names="service.internal,service"
+                    issuer-file="ca/internal-root.pfx" issuer-password="$CA_PASSWORD" />
+```
+
+`<create-certificate>` creates certificates; it does not use them. Signing an executable,
+timestamping a signature, enrolling with an external CA and installing a root into the machine
+trust store all still need `signtool`, `osslsigncode` or `certutil` through `<exec>`.
+
+Full attribute list: [create-certificate](User-Reference.md#action-create-certificate).
 
 ### Working with External Tools
 
