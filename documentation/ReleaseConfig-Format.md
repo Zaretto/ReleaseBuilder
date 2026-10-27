@@ -874,7 +874,8 @@ Copies files from one location to another with optional transformations.
       match="pattern"
       name="new_filename"
       transform="transformation"
-      recursive="true|false">
+      recursive="true|false"
+      if-different="true|false">
   <transform-content transform="transformation" />
 </copy>
 ```
@@ -889,6 +890,7 @@ Copies files from one location to another with optional transformations.
 | `name` | No | - | Rename single file |
 | `transform` | No | - | Transform filename (see [Transform Functions](#transform-functions)) |
 | `recursive` | No | `false` | Include subdirectories |
+| `if-different` | No | `false` | Replace an existing destination only when its contents differ, so an identical file keeps its timestamp |
 
 **Child Elements:**
 - `<transform-content transform="...">` - Transform file contents during copy

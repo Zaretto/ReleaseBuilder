@@ -602,6 +602,7 @@ namespace ReleaseBuilder
                         {
                             var from = GetFilePathAttribute(actionNode, "from");
                             var recursive = GetAttribute(actionNode, "recursive", false);
+                            var ifDifferent = GetAttribute(actionNode, "if-different", false);
                             var searchOption = SearchOption.TopDirectoryOnly;
 
                             // if from points to a file then just copy that.
@@ -681,12 +682,11 @@ namespace ReleaseBuilder
 
                                     destFile = _transform.Transform(transform, destFile);
                                     if (DryRun)
-                                        RLog.InfoFormat("[dry-run] Would copy: {0} -> {1}", fromPath, destFile);
-                                    else
-                                    {
-                                        copyFile(fromPath, destFile, transformContents);
+                                        RLog.InfoFormat("[dry-run] Would copy{2}: {0} -> {1}", fromPath, destFile, ifDifferent ? " if different" : "");
+                                    else if (copyFile(fromPath, destFile, transformContents, ifDifferent))
                                         RLog.TraceFormat("copied {0}", destFile);
-                                    }
+                                    else
+                                        RLog.TraceFormat("unchanged {0}", destFile);
                                 }
                                 else foreach (var file in copyList)
                                     {
@@ -699,12 +699,11 @@ namespace ReleaseBuilder
                                         else
                                             destFile = Path.Combine(toPath, destFile);
                                         if (DryRun)
-                                            RLog.InfoFormat("[dry-run] Would copy: {0} -> {1}", file, destFile);
-                                        else
-                                        {
-                                            copyFile(file, destFile, transformContents);
+                                            RLog.InfoFormat("[dry-run] Would copy{2}: {0} -> {1}", file, destFile, ifDifferent ? " if different" : "");
+                                        else if (copyFile(file, destFile, transformContents, ifDifferent))
                                             RLog.TraceFormat("copied {0}", destFile);
-                                        }
+                                        else
+                                            RLog.TraceFormat("unchanged {0}", destFile);
                                     }
                             }
                         }
@@ -1322,12 +1321,45 @@ namespace ReleaseBuilder
             }
             return false;
         }
-        private void copyFile(string? fromPath, string destFile, IEnumerable<XElement> transforms)
+        /// <summary>
+        /// Copies <paramref name="fromPath"/> to <paramref name="destFile"/>, applying the content transforms.
+        /// With <paramref name="onlyIfDifferent"/> an existing destination whose bytes already equal the result
+        /// is left alone, so its timestamp does not change and a build keyed on timestamps does not rebuild.
+        /// Returns whether the destination was written.
+        /// </summary>
+        private bool copyFile(string? fromPath, string destFile, IEnumerable<XElement> transforms, bool onlyIfDifferent = false)
         {
-            File.Copy(fromPath, destFile, true);
-            if (transforms != null && transforms.Any())
-                EditFile(destFile, transforms);
+            var hasTransforms = transforms != null && transforms.Any();
+            if (!onlyIfDifferent || !File.Exists(destFile))
+            {
+                File.Copy(fromPath, destFile, true);
+                if (hasTransforms)
+                    EditFile(destFile, transforms);
+                return true;
+            }
+
+            // Build the result beside the destination, so a replace is a move on the same volume.
+            var candidate = destFile + ".rb-new";
+            try
+            {
+                File.Copy(fromPath, candidate, true);
+                if (hasTransforms)
+                    EditFile(candidate, transforms);
+                if (FilesIdentical(candidate, destFile))
+                    return false;
+                File.Move(candidate, destFile, true);
+                return true;
+            }
+            finally
+            {
+                if (File.Exists(candidate))
+                    File.Delete(candidate);
+            }
         }
+
+        private static bool FilesIdentical(string a, string b) =>
+            new FileInfo(a).Length == new FileInfo(b).Length
+            && File.ReadAllBytes(a).AsSpan().SequenceEqual(File.ReadAllBytes(b));
 
         private T? GetAttributeAsArray<T>(XElement actionNode, string v, Func<string, T> func)
         {

@@ -1716,7 +1716,8 @@ Copies files from source to destination with optional transformations.
       match="pattern"
       name="new_filename"
       transform="transformation"
-      recursive="true|false">
+      recursive="true|false"
+      if-different="true|false">
   <transform-content transform="transformation" />
   ...
 </copy>
@@ -1772,6 +1773,19 @@ See [Transform Functions Reference](#transform-functions-reference).
 
 When `true`, `from` must be a directory.
 
+##### if-different (optional)
+
+**Type:** Boolean
+**Default:** `false`
+**Purpose:** Leave a destination file alone when it already holds the same bytes
+
+When `true`, a file that already exists at the destination is replaced only if the result of the
+copy (after any `transform-content`) differs from it. An identical destination keeps its
+timestamp, so a build that decides what to recompile from timestamps does not treat the copy as
+a change. Use it when the copy refreshes files that a later step builds, e.g. regenerated sources.
+A destination that does not exist is always written. With `--dry-run` the message reads
+"Would copy if different".
+
 **Child Elements:**
 
 ##### transform-content
@@ -1826,7 +1840,7 @@ Can be specified multiple times; applied in order.
 
 **Behavior:**
 - Creates destination directory if it doesn't exist
-- Overwrites existing files
+- Overwrites existing files, unless `if-different="true"` and the contents are already identical
 - Preserves directory structure when `recursive="true"`
 - Content transformations only apply to text files
 
